@@ -4,13 +4,15 @@
 #include <chrono>
 #include <iomanip>
 
+#include "perf_event/perf_event.h"
+
 using std::cout;
 using std::setw;
 using std::to_string;
 
-const int elemNum{ 10000};      // How many element push into vector
-const std::size_t vecNum{100};  // How many pararell vectors in each step 
-static_assert(vecNum > 0);
+const int elemN{100000};      // How many element push into vector
+const std::size_t vecN{ 10};  // How many pararell vectors in each step 
+static_assert(vecN > 0);
 struct blob {                   // Block-Of-Bytes to be used 
     unsigned char blob[1024];
 };
@@ -22,12 +24,12 @@ struct oneLog{
 
     //oneLog(): cntResize(0), cntMoves(0){}
 };
-std::array<oneLog, elemNum> logs;
+std::array<oneLog, elemN> logs;
 
 template<typename T_vector, std::size_t M>
 int test(int N,                                // N is # of push_backs
          std::array<T_vector, M>& testVectors, // Vectors can be preinitialized 
-         std::array<oneLog, elemNum>& logs)    // Per-loop measurments
+         std::array<oneLog, elemN>& logs)    // Per-loop measurments
 {
     for(int i =0; i < N; ++i){
         for(auto& v: testVectors){
@@ -51,9 +53,9 @@ std::string mem2str(long m)
     return to_string(m) + "  B";
 }
 
-void showLog(int testN, std::array<oneLog, elemNum>& logs)
+void showLog(int testN, std::array<oneLog, elemN>& logs)
 {
-    cout << setw(8) << "size()" << "  " << setw(8) << "capacity()  &*.begin()     diff_to_previous\n";
+    cout << "1st vector (size/capa/buffer_addr/addr_change):\n";
     void *oldPtr{0};
     for(int i = 0; i < testN; ++i){
         auto& log = logs[i];
@@ -65,48 +67,60 @@ void showLog(int testN, std::array<oneLog, elemNum>& logs)
         cout << log.ptr << " diff " << setw(10) << mem2str(ptrdiff) <<"\n";
         oldPtr = log.ptr;
     }
-    cout << "Data size: " << mem2str(sizeof(blob) * testN * vecNum) << ", ";
-    cout << elemNum << " elements of size " << sizeof(blob) << " in " << vecNum << " vectors\n";
 }
+
+struct cMeasurments{
+    int fdPF;
+    std::chrono::steady_clock clk;
+    std::chrono::steady_clock::time_point clkS, clkE;
+
+    cMeasurments(){ fdPF = page_faults_init(); }
+
+    void start(){
+        page_faults_start(fdPF);
+        clkS = clk.now();
+    }
+
+    void stop(){
+        clkE = clk.now();
+        long f = page_faults_stop(fdPF);
+        std::chrono::milliseconds mili;
+        mili  = std::chrono::duration_cast<std::chrono::milliseconds>(clkE - clkS);
+        cout << "elapsed: " << mili.count() << "ms, page faults: " << f << "\n";
+    }
+};
 
 int main(int argc, char** argv)
 {
-    std::array<std::vector<blob>, vecNum> vectors1;
+    cMeasurments m;
+    std::array<std::vector<blob>, vecN> vectors1;
 
-    cout << "Empty std::vector, one row per reallocation\n";
-    int testN{elemNum};
-    std::chrono::steady_clock clk;
-    auto clkS = clk.now();
+    cout << "Data size: " << mem2str(sizeof(blob) * elemN * vecN) << ", ";
+    cout << elemN << " elements of size " << sizeof(blob) << " in " << vecN << " vectors\n";
+
+    cout << "\nEmpty std::vector, ";
+    int testN{elemN};
+    m.start();
     test(testN, vectors1, logs);
-    auto clkE = clk.now();
-
-    std::chrono::milliseconds mili;
-    mili  = std::chrono::duration_cast<std::chrono::milliseconds>(clkE - clkS);
+    m.stop();
     showLog(testN, logs);
-    cout << "Elapsed: " << mili.count() << "ms\n";
 
     // Reused vectors
-    cout << "Reused std::vector, no reallocations - one row\n";
+    cout << "\nReused std::vector, ";
     for(auto& v: vectors1) v.clear();
-    clkS = clk.now();
+    m.start();
     test(testN, vectors1, logs);
-    clkE = clk.now();
-
-    mili  = std::chrono::duration_cast<std::chrono::milliseconds>(clkE - clkS);
+    m.stop();
     showLog(testN, logs);
-    cout << "Elapsed: " << mili.count() << "ms\n";
 
     // Reserved vectors
-    cout << "Reserved std::vector\n";
-    std::array<std::vector<blob>, vecNum> v;
+    cout << "\nReserved std::vector, ";
+    std::array<std::vector<blob>, vecN> v;
     vectors1.swap(v);
     for(auto& v: vectors1) v.reserve(testN);
-    clkS = clk.now();
+    m.start();
     test(testN, vectors1, logs);
-    clkE = clk.now();
-
-    mili  = std::chrono::duration_cast<std::chrono::milliseconds>(clkE - clkS);
+    m.stop();
     showLog(testN, logs);
-    cout << "Elapsed: " << mili.count() << "ms\n";
 }
 
