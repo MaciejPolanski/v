@@ -4,7 +4,8 @@
 #include <chrono>
 #include <iomanip>
 
-#include "perf_event/perf_event.h"
+#include <sys/resource.h>
+#include "perf_event/proc_statm.h"
 
 using std::cout;
 using std::setw;
@@ -13,7 +14,7 @@ using std::to_string;
 const int elemN{100000};      // How many element push into vector
 const std::size_t vecN{ 10};  // How many pararell vectors in each step 
 static_assert(vecN > 0);
-struct blob {                   // Block-Of-Bytes to be used 
+struct blob {                 // Block-Of-Bytes to be used 
     unsigned char blob[1024];
 };
 
@@ -44,14 +45,20 @@ int test(int N,                                // N is # of push_backs
 
 std::string mem2str(long m)
 {
-    if ( abs(m / 1024 / 1024 / 1024) > 0 )
+    if ( abs(m / 1024 / 1024 / 1024 / 10) > 0 )
         return to_string(m/1024/1024/1024) + " GB";
-    if ( abs(m / 1024 / 1024) > 0 )
+    if ( abs(m / 1024 / 1024 / 10) > 0 )
         return to_string(m/1024/1024) + " MB";
-    if ( abs(m / 1024) > 0 )
+    if ( abs(m / 1024 / 10) > 0 )
         return to_string(m/1024) + " KB";
     return to_string(m) + "  B";
 }
+
+struct p2s_t {
+    const long page_size = 4096;
+    std::string operator()(long m) { return mem2str(m * page_size);}
+};
+p2s_t p2s{};
 
 void showLog(int testN, std::array<oneLog, elemN>& logs)
 {
@@ -59,7 +66,7 @@ void showLog(int testN, std::array<oneLog, elemN>& logs)
     void *oldPtr{0};
     for(int i = 0; i < testN; ++i){
         auto& log = logs[i];
-        if (oldPtr == log.ptr)
+        if (oldPtr == log.ptr && i < (testN - 1))
             continue;
         long ptrdiff = (char*)log.ptr - (char*)oldPtr;
         // cout << setw(2) << i << ", ";
@@ -70,23 +77,29 @@ void showLog(int testN, std::array<oneLog, elemN>& logs)
 }
 
 struct cMeasurments{
-    int fdPF;
     std::chrono::steady_clock clk;
     std::chrono::steady_clock::time_point clkS, clkE;
-
-    cMeasurments(){ fdPF = page_faults_init(); }
+    long minFlt;
 
     void start(){
-        page_faults_start(fdPF);
+        rusage us;
+        getrusage(RUSAGE_SELF, &us);
+        minFlt = us.ru_minflt; 
         clkS = clk.now();
     }
 
     void stop(){
         clkE = clk.now();
-        long f = page_faults_stop(fdPF);
+        rusage us;
+        getrusage(RUSAGE_SELF, &us);
+        ProcStatm ps;
+        getProcStatm(&ps);
         std::chrono::milliseconds mili;
+        cout <<  " page fault: "  << us.ru_minflt - minFlt;
         mili  = std::chrono::duration_cast<std::chrono::milliseconds>(clkE - clkS);
-        cout << "elapsed: " << mili.count() << "ms, page faults: " << f << "\n";
+        cout << " elapsed: " << mili.count() << " ms\n";
+        //cout <<  "max rss: "  << mem2str(us.ru_maxrss * 1024);
+        cout << "vms: " << p2s(ps.size) << " rss: " << p2s(ps.resident) << "\n";
     }
 };
 
@@ -98,7 +111,7 @@ int main(int argc, char** argv)
     cout << "Data size: " << mem2str(sizeof(blob) * elemN * vecN) << ", ";
     cout << elemN << " elements of size " << sizeof(blob) << " in " << vecN << " vectors\n";
 
-    cout << "\nEmpty std::vector, ";
+    cout << "\nEmpty std::vector,";
     int testN{elemN};
     m.start();
     test(testN, vectors1, logs);
@@ -106,15 +119,27 @@ int main(int argc, char** argv)
     showLog(testN, logs);
 
     // Reused vectors
-    cout << "\nReused std::vector, ";
+    cout << "\nReused std::vector,";
     for(auto& v: vectors1) v.clear();
     m.start();
     test(testN, vectors1, logs);
     m.stop();
     showLog(testN, logs);
 
-    // Reserved vectors
+    // Reserved after mem release
+    cout << "\nSwap free before use of std::vector(s),";
+    m.start();
+    std::array<std::vector<blob>, vecN>{}.swap(vectors1);
+    m.stop();
     cout << "\nReserved std::vector, ";
+    m.start();
+    for(auto& v: vectors1) v.reserve(testN);
+    test(testN, vectors1, logs);
+    m.stop();
+    showLog(testN, logs);
+
+    // Reserved vectors
+    cout << "\nReserved std::vector,";
     std::array<std::vector<blob>, vecN> v;
     vectors1.swap(v);
     for(auto& v: vectors1) v.reserve(testN);
@@ -122,5 +147,6 @@ int main(int argc, char** argv)
     test(testN, vectors1, logs);
     m.stop();
     showLog(testN, logs);
+    std::array<std::vector<blob>, vecN>{}.swap(v);  // Kill v to not hang in memory
 }
 

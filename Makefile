@@ -1,5 +1,5 @@
 all:
-	g++ main.cpp ./perf_event/perf_event.c
+	g++ main.cpp ./perf_event/proc_statm.c
 
 test:
 	./a.out
