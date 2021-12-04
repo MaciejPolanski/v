@@ -94,16 +94,18 @@ struct cMeasurments{
         getrusage(RUSAGE_SELF, &us);
         ProcStatm ps;
         getProcStatm(&ps);
-        std::chrono::milliseconds mili;
-        cout <<  " page fault: "  << us.ru_minflt - minFlt;
-        mili  = std::chrono::duration_cast<std::chrono::milliseconds>(clkE - clkS);
-        cout << " elapsed: " << mili.count() << " ms\n";
+        cout << "\n";
         //cout <<  "max rss: "  << mem2str(us.ru_maxrss * 1024);
-        cout << "vms: " << p2s(ps.size) << " rss: " << p2s(ps.resident) << "\n";
+        cout << "vms: " << p2s(ps.size) << " rss: " << p2s(ps.resident);
+        cout <<  " page fault: "  << us.ru_minflt - minFlt;
+        std::chrono::milliseconds mili;
+        mili  = std::chrono::duration_cast<std::chrono::milliseconds>(clkE - clkS);
+        cout << " t: " << mili.count() << " ms";
+        cout << "\n";
     }
 };
 
-int main(int argc, char** argv)
+void testVector()
 {
     cMeasurments m;
     std::array<std::vector<blob>, vecN> vectors1;
@@ -126,18 +128,6 @@ int main(int argc, char** argv)
     m.stop();
     showLog(testN, logs);
 
-    // Reserved after mem release
-    cout << "\nSwap free before use of std::vector(s),";
-    m.start();
-    std::array<std::vector<blob>, vecN>{}.swap(vectors1);
-    m.stop();
-    cout << "\nReserved std::vector, ";
-    m.start();
-    for(auto& v: vectors1) v.reserve(testN);
-    test(testN, vectors1, logs);
-    m.stop();
-    showLog(testN, logs);
-
     // Reserved vectors
     cout << "\nReserved std::vector,";
     std::array<std::vector<blob>, vecN> v;
@@ -148,5 +138,43 @@ int main(int argc, char** argv)
     m.stop();
     showLog(testN, logs);
     std::array<std::vector<blob>, vecN>{}.swap(v);  // Kill v to not hang in memory
+    // Reserved after mem release
+
+    cout << "\nSwap free before use of std::vector(s),";
+    m.start();
+    std::array<std::vector<blob>, vecN>{}.swap(vectors1);
+    m.stop();
+    cout << "\nReserved std::vector, ";
+    m.start();
+    for(auto& v: vectors1) v.reserve(testN);
+    test(testN, vectors1, logs);
+    m.stop();
+    showLog(testN, logs);
 }
+
+int main(int argc, char** argv)
+{
+    testVector();
+}
+
+//   Kernel memory page allocation calls:
+// mm/memory.c do_anonymous_page
+// include/linux/highmem.h:alloc_zeroed_user_highpage_movable(struct vm_area_struct *vma,
+// arch/ia64/include/asm/page.h:#define __alloc_zeroed_user_highpage(movableflags, vma, vaddr)
+// include/linux/gfp.h:#define alloc_page_vma(gfp_mask, vma, addr)
+//                             alloc_pages(gfp_t gfp_mask, unsigned int order)
+//                             alloc_pages_node(numa_node_id(), gfp_mask, order);
+//                             __alloc_pages_node
+//                             __alloc_pages
+//                             __alloc_pages_nodemask(gfp_mask, order, preferred_nid, NULL);
+// mm/page_alloc.c:__alloc_pages_nodemask(gfp_t gfp_mask, unsigned int order, int preferred_nid,
+//                             get_page_from_freelist
+//                             prep_new_page
+//                             post_alloc_hook
+// include/linux/mm.h:static inline bool want_init_on_alloc(gfp_t flags)
+//                                       ***return flags & __GFP_ZERO;
+// page_alloc.c:static void kernel_init_free_pages(struct page *page, int numpages)
+// include/linux/highmem.h:static inline void clear_highpage(struct page *page)
+// include/asm-generic/page.h:#define clear_page(page)	memset((page), 0, PAGE_SIZE)
+//
 
