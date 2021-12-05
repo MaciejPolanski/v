@@ -3,9 +3,11 @@
 #include <vector>
 #include <chrono>
 #include <iomanip>
+#include <fstream>
 
 #include <sys/resource.h>
 #include "perf_event/proc_statm.h"
+#include "mmap_popul_alloc.h"
 
 using std::cout;
 using std::setw;
@@ -60,6 +62,11 @@ struct p2s_t {
 };
 p2s_t p2s{};
 
+void showMMap()
+{
+    std::ifstream is{"/proc/self/maps"};
+}
+
 void showLog(int testN, std::array<oneLog, elemN>& logs)
 {
     cout << "1st vector (size/capa/buffer_addr/addr_change):\n";
@@ -105,56 +112,104 @@ struct cMeasurments{
     }
 };
 
+template<class T>
+void realFree(T& t)
+{
+    T temp{};
+    t.swap(temp);
+}
+
 void testVector()
 {
     cMeasurments m;
     std::array<std::vector<blob>, vecN> vectors1;
 
-    cout << "Data size: " << mem2str(sizeof(blob) * elemN * vecN) << ", ";
-    cout << elemN << " elements of size " << sizeof(blob) << " in " << vecN << " vectors\n";
+    cout << "+--Data size: " << mem2str(sizeof(blob) * elemN * vecN) << ", ";
+    cout << elemN << " elements of size " << sizeof(blob) << " in " << vecN << " vectors--+\n";
 
-    cout << "\nEmpty std::vector,";
+    // Absoulutely standard use of vector   
+    cout << "\nFilling empty std::vector(s)";
     int testN{elemN};
     m.start();
     test(testN, vectors1, logs);
     m.stop();
-    showLog(testN, logs);
+    //showLog(testN, logs);
+
+    // MAP_POPULATE allocator
+    cout << "\nDirect MAP_POPULATE mmap";
+    std::array<std::vector<blob, mmap_alloc<blob>>, vecN> vmmap;
+    m.start();
+    test(testN, vmmap, logs);
+    m.stop();
+    //showLog(testN, logs);
+    realFree(vmmap);
+    
+    // MAP_POPULATE half allocator
+    cout << "\nDirect half- MAP_POPULATE mmap";
+    std::array<std::vector<blob, mmap_half_alloc<blob>>, vecN> vHalfMmap;
+    m.start();
+    test(testN, vHalfMmap, logs);
+    m.stop();
+    //showLog(testN, logs);
+    realFree(vHalfMmap);
 
     // Reused vectors
-    cout << "\nReused std::vector,";
+    cout << "\nReusing std::vector cleared with clear()";
     for(auto& v: vectors1) v.clear();
     m.start();
     test(testN, vectors1, logs);
     m.stop();
-    showLog(testN, logs);
+    //showLog(testN, logs);
+
+    cout << "\n--- reserved vectors ---\n";
 
     // Reserved vectors
-    cout << "\nReserved std::vector,";
+    cout << "\nFilling new reserved std::vector";
     std::array<std::vector<blob>, vecN> v;
     vectors1.swap(v);
     for(auto& v: vectors1) v.reserve(testN);
     m.start();
     test(testN, vectors1, logs);
     m.stop();
-    showLog(testN, logs);
-    std::array<std::vector<blob>, vecN>{}.swap(v);  // Kill v to not hang in memory
-    // Reserved after mem release
+    //showLog(testN, logs);
 
-    cout << "\nSwap free before use of std::vector(s),";
+    // Reserved after mem release
+    cout << "\nReal free (swap) of std::vector(s)";
     m.start();
-    std::array<std::vector<blob>, vecN>{}.swap(vectors1);
+    realFree(vectors1);
+    realFree(v);
     m.stop();
-    cout << "\nReserved std::vector, ";
+    cout << "\nFilling again reserved std::vector ";
     m.start();
     for(auto& v: vectors1) v.reserve(testN);
     test(testN, vectors1, logs);
     m.stop();
-    showLog(testN, logs);
+    //showLog(testN, logs);
+
+    // MAP_POPULATE allocator 
+    cout << "\nDirect MAP_POPULATE mmap, including reserve() time";
+    realFree(vmmap);
+    m.start();
+    for(auto& v:vmmap) v.reserve(testN);
+    test(testN, vmmap, logs);
+    m.stop();
+    //showLog(testN, logs);
+
+    // MAP_POPULATE allocator, only inserting
+    cout << "\nDirect MAP_POPULATE mmap, not counting reserve() time";
+    realFree(vmmap);
+    for(auto& v:vmmap) v.reserve(testN);
+    m.start();
+    test(testN, vmmap, logs);
+    m.stop();
+    //showLog(testN, logs);
+    
 }
 
 int main(int argc, char** argv)
 {
     testVector();
+    showMMap();
 }
 
 //   Kernel memory page allocation calls:
