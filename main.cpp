@@ -20,31 +20,7 @@ struct blob {                 // Block-Of-Bytes to be used
     unsigned char blob[1024];
 };
 
-struct oneLog{
-    std::size_t size;
-    std::size_t capacity;
-    void* ptr;
-
-    //oneLog(): cntResize(0), cntMoves(0){}
-};
-std::array<oneLog, elemN> logs;
-
-template<typename T_vector, std::size_t M>
-int test(int N,                                // N is # of push_backs
-         std::array<T_vector, M>& testVectors, // Vectors can be preinitialized 
-         std::array<oneLog, elemN>& logs)    // Per-loop measurments
-{
-    for(int i =0; i < N; ++i){
-        for(auto& v: testVectors){
-            v.emplace_back(blob{});
-        }
-        logs[i].size = testVectors[0].size();
-        logs[i].capacity = testVectors[0].capacity();
-        logs[i].ptr = &*testVectors[0].begin();
-    }
-    return 1;
-}
-
+// String fromating for bytes
 std::string mem2str(long m)
 {
     if ( abs(m / 1024 / 1024 / 1024 / 10) > 0 )
@@ -56,16 +32,20 @@ std::string mem2str(long m)
     return to_string(m) + "  B";
 }
 
+// PFN (Page Frame Number) to bytes
 struct p2s_t {
     const long page_size = 4096;
     std::string operator()(long m) { return mem2str(m * page_size);}
 };
 p2s_t p2s{};
 
-void showMMap()
-{
-    std::ifstream is{"/proc/self/maps"};
-}
+// Logging parameters of vector after push
+struct oneLog{
+    std::size_t size;
+    std::size_t capacity;
+    void* ptr;
+};
+std::array<oneLog, elemN> logs;
 
 void showLog(int testN, std::array<oneLog, elemN>& logs)
 {
@@ -81,6 +61,11 @@ void showLog(int testN, std::array<oneLog, elemN>& logs)
         cout << log.ptr << " diff " << setw(10) << mem2str(ptrdiff) <<"\n";
         oldPtr = log.ptr;
     }
+}
+
+void showMMap()
+{
+    std::ifstream is{"/proc/self/maps"};
 }
 
 struct cMeasurments{
@@ -119,6 +104,23 @@ void realFree(T& t)
     t.swap(temp);
 }
 
+// Testing workhorse
+template<typename T_vector, std::size_t M>
+int test(int N,                                // N is # of push_backs
+         std::array<T_vector, M>& testVectors, // Vectors can be preinitialized 
+         std::array<oneLog, elemN>& logs)      // Per-loop measurments
+{
+    for(int i =0; i < N; ++i){
+        for(auto& v: testVectors){
+            v.emplace_back(blob{});
+        }
+        logs[i].size = testVectors[0].size();
+        logs[i].capacity = testVectors[0].capacity();
+        logs[i].ptr = &*testVectors[0].begin();
+    }
+    return 1;
+}
+
 void testVector()
 {
     cMeasurments m;
@@ -135,8 +137,16 @@ void testVector()
     m.stop();
     //showLog(testN, logs);
 
+    // Reused (cler) vectors
+    cout << "\nReusing std::vector cleared with clear()";
+    for(auto& v: vectors1) v.clear();
+    m.start();
+    test(testN, vectors1, logs);
+    m.stop();
+    //showLog(testN, logs);
+
     // MAP_POPULATE allocator
-    cout << "\nDirect MAP_POPULATE mmap";
+    cout << "\nMAP_POPULATE mmap";
     std::array<std::vector<blob, mmap_alloc<blob>>, vecN> vmmap;
     m.start();
     test(testN, vmmap, logs);
@@ -145,21 +155,13 @@ void testVector()
     realFree(vmmap);
     
     // MAP_POPULATE half allocator
-    cout << "\nDirect half- MAP_POPULATE mmap";
+    cout << "\nHalf-MAP_POPULATE mmap";
     std::array<std::vector<blob, mmap_half_alloc<blob>>, vecN> vHalfMmap;
     m.start();
     test(testN, vHalfMmap, logs);
     m.stop();
     //showLog(testN, logs);
     realFree(vHalfMmap);
-
-    // Reused vectors
-    cout << "\nReusing std::vector cleared with clear()";
-    for(auto& v: vectors1) v.clear();
-    m.start();
-    test(testN, vectors1, logs);
-    m.stop();
-    //showLog(testN, logs);
 
     cout << "\n--- reserved vectors ---\n";
 
@@ -187,23 +189,41 @@ void testVector()
     //showLog(testN, logs);
 
     // MAP_POPULATE allocator 
-    cout << "\nDirect MAP_POPULATE mmap, including reserve() time";
-    realFree(vmmap);
+    cout << "\nMAP_POPULATE mmap, including reserve() time";
+    std::array<std::vector<blob, mmap_alloc<blob>>, vecN> vmmap_r;
     m.start();
-    for(auto& v:vmmap) v.reserve(testN);
-    test(testN, vmmap, logs);
+    for(auto& v:vmmap_r) v.reserve(testN);
+    test(testN, vmmap_r, logs);
     m.stop();
     //showLog(testN, logs);
+    realFree(vmmap_r);
 
-    // MAP_POPULATE allocator, only inserting
-    cout << "\nDirect MAP_POPULATE mmap, not counting reserve() time";
-    realFree(vmmap);
-    for(auto& v:vmmap) v.reserve(testN);
+    // MAP_POPULATE allocator, count only inserting
+    cout << "\nMAP_POPULATE mmap, not counting reserve() time";
+    for(auto& v:vmmap_r) v.reserve(testN);
     m.start();
-    test(testN, vmmap, logs);
+    test(testN, vmmap_r, logs);
     m.stop();
     //showLog(testN, logs);
     
+    // MAP_POPULATE half-allocator 
+    cout << "\nHalf-MAP_POPULATE mmap, including reserve()";
+    std::array<std::vector<blob, mmap_half_alloc<blob>>, vecN> vHmmap_r;
+    m.start();
+    for(auto& v:vHmmap_r) v.reserve(testN);
+    test(testN, vHmmap_r, logs);
+    m.stop();
+    //showLog(testN, logs);
+    realFree(vHmmap_r);
+
+    // MAP_POPULATE half-allocator 
+    cout << "\nHalf-MAP_POPULATE mmap, only count pushing";
+    for(auto& v:vHmmap_r) v.reserve(testN);
+    m.start();
+    test(testN, vHmmap_r, logs);
+    m.stop();
+    //showLog(testN, logs);
+    realFree(vHmmap_r);
 }
 
 int main(int argc, char** argv)
