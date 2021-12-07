@@ -68,6 +68,7 @@ void showMMap()
     std::ifstream is{"/proc/self/maps"};
 }
 
+// Counters before/after tests
 struct cMeasurments{
     std::chrono::steady_clock clk;
     std::chrono::steady_clock::time_point clkS, clkE;
@@ -135,9 +136,9 @@ void testVector()
     m.start();
     test(testN, vectors1, logs);
     m.stop();
-    //showLog(testN, logs);
+    showLog(testN, logs);
 
-    // Reused (cler) vectors
+    // Reused clear() vectors
     cout << "\nReusing std::vector cleared with clear()";
     for(auto& v: vectors1) v.clear();
     m.start();
@@ -151,7 +152,7 @@ void testVector()
     m.start();
     test(testN, vmmap, logs);
     m.stop();
-    //showLog(testN, logs);
+    showLog(testN, logs);
     realFree(vmmap);
     
     // MAP_POPULATE half allocator
@@ -166,12 +167,11 @@ void testVector()
     cout << "\n--- reserved vectors ---\n";
 
     // Reserved vectors
-    cout << "\nFilling new reserved std::vector";
-    std::array<std::vector<blob>, vecN> v;
-    vectors1.swap(v);
-    for(auto& v: vectors1) v.reserve(testN);
+    cout << "\nNew reserved std::vector";
+    std::array<std::vector<blob>, vecN> vectors2;
+    for(auto& v: vectors2) v.reserve(testN);
     m.start();
-    test(testN, vectors1, logs);
+    test(testN, vectors2, logs);
     m.stop();
     //showLog(testN, logs);
 
@@ -179,9 +179,9 @@ void testVector()
     cout << "\nReal free (swap) of std::vector(s)";
     m.start();
     realFree(vectors1);
-    realFree(v);
+    realFree(vectors2);
     m.stop();
-    cout << "\nFilling again reserved std::vector ";
+    cout << "\nAgain reserved std::vector ";
     m.start();
     for(auto& v: vectors1) v.reserve(testN);
     test(testN, vectors1, logs);
@@ -189,7 +189,7 @@ void testVector()
     //showLog(testN, logs);
 
     // MAP_POPULATE allocator 
-    cout << "\nMAP_POPULATE mmap, including reserve() time";
+    cout << "\nMAP_POPULATE mmap allocator";
     std::array<std::vector<blob, mmap_alloc<blob>>, vecN> vmmap_r;
     m.start();
     for(auto& v:vmmap_r) v.reserve(testN);
@@ -199,7 +199,7 @@ void testVector()
     realFree(vmmap_r);
 
     // MAP_POPULATE allocator, count only inserting
-    cout << "\nMAP_POPULATE mmap, not counting reserve() time";
+    cout << "\nMAP_POPULATE mmap, excluding reserve() time";
     for(auto& v:vmmap_r) v.reserve(testN);
     m.start();
     test(testN, vmmap_r, logs);
@@ -207,7 +207,7 @@ void testVector()
     //showLog(testN, logs);
     
     // MAP_POPULATE half-allocator 
-    cout << "\nHalf-MAP_POPULATE mmap, including reserve()";
+    cout << "\nHalf-MAP_POPULATE mmap allocator";
     std::array<std::vector<blob, mmap_half_alloc<blob>>, vecN> vHmmap_r;
     m.start();
     for(auto& v:vHmmap_r) v.reserve(testN);
@@ -217,7 +217,7 @@ void testVector()
     realFree(vHmmap_r);
 
     // MAP_POPULATE half-allocator 
-    cout << "\nHalf-MAP_POPULATE mmap, only count pushing";
+    cout << "\nHalf-MAP_POPULATE mmap. excluding reserve() time";
     for(auto& v:vHmmap_r) v.reserve(testN);
     m.start();
     test(testN, vHmmap_r, logs);
