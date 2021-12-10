@@ -4,6 +4,8 @@
 #include <chrono>
 #include <iomanip>
 #include <fstream>
+#include <algorithm>
+#include <functional>
 
 #include <sys/resource.h>
 #include "perf_event/proc_statm.h"
@@ -14,7 +16,7 @@ using std::setw;
 using std::to_string;
 
 const int elemN{100000};      // How many element push into vector
-const std::size_t vecN{ 10};  // How many pararell vectors in each step 
+const std::size_t vecN{  5};  // How many pararell vectors in each step 
 static_assert(vecN > 0);
 struct blob {                 // Block-Of-Bytes to be used 
     unsigned char blob[1024];
@@ -63,9 +65,27 @@ void showLog(int testN, std::array<oneLog, elemN>& logs)
     }
 }
 
+// Showing mmap'ed memory
 void showMMap()
 {
+    cout << "Anonumous mmap: ";
+    // Most likely parallel usage of kernel service and malloc crashes
     std::ifstream is{"/proc/self/maps"};
+    std::string s;
+    while (std::getline(is, s)) {
+        std::istringstream buf{s};
+        long mmStart, mmEnd;
+        char dash;
+        buf >> std::hex >> mmStart >> dash >> std::hex >> mmEnd;
+        std::array<std::string, 5> ss;
+        std::for_each(ss.begin(), ss.end(), [&](std::string& s1){ buf >> s1;});
+        if (ss[2] != "00:00" || ss[4] != "")
+            continue;
+        //cout << "\n" << std::hex << mmStart << " - " << std::hex << mmEnd << " "; 
+        cout << mem2str(mmEnd - mmStart) << ", " << ss[4];
+        //cout <<" \n";
+    };
+    cout << "\n";
 }
 
 // Counters before/after tests
@@ -87,7 +107,6 @@ struct cMeasurments{
         getrusage(RUSAGE_SELF, &us);
         ProcStatm ps;
         getProcStatm(&ps);
-        cout << "\n";
         //cout <<  "max rss: "  << mem2str(us.ru_maxrss * 1024);
         cout << "vms: " << p2s(ps.size) << " rss: " << p2s(ps.resident);
         cout <<  " page fault: "  << us.ru_minflt - minFlt;
@@ -129,34 +148,40 @@ void testVector()
 
     cout << "+--Data size: " << mem2str(sizeof(blob) * elemN * vecN) << ", ";
     cout << elemN << " elements of size " << sizeof(blob) << " in " << vecN << " vectors--+\n";
+    showMMap();
 
     // Absoulutely standard use of vector   
-    cout << "\nFilling empty std::vector(s)";
+    cout << "\nSingle-step pushing into std::vector(s)\n";
     int testN{elemN};
     m.start();
     test(testN, vectors1, logs);
     m.stop();
     showLog(testN, logs);
+    showMMap();
 
     // Reused clear() vectors
-    cout << "\nReusing std::vector cleared with clear()";
+    cout << "\nReusing std::vector cleared with clear()\n";
     for(auto& v: vectors1) v.clear();
     m.start();
     test(testN, vectors1, logs);
     m.stop();
     //showLog(testN, logs);
+    //showMMap();
 
     // MAP_POPULATE allocator
-    cout << "\nMAP_POPULATE mmap";
+    cout << "\nSingle-step, mmap allocator, MAP_POPULATE\n";
     std::array<std::vector<blob, mmap_alloc<blob>>, vecN> vmmap;
     m.start();
     test(testN, vmmap, logs);
     m.stop();
     showLog(testN, logs);
+    showMMap();
+    cout << "Real free of MAP_POPULATE vector\n";
     realFree(vmmap);
+    showMMap();
     
     // MAP_POPULATE half allocator
-    cout << "\nHalf-MAP_POPULATE mmap";
+    cout << "\nSingle-step, map allocator, 1/2 MAP_POPULATE\n";
     std::array<std::vector<blob, mmap_half_alloc<blob>>, vecN> vHalfMmap;
     m.start();
     test(testN, vHalfMmap, logs);
@@ -167,29 +192,33 @@ void testVector()
     cout << "\n--- reserved vectors ---\n";
 
     // Reserved vectors
-    cout << "\nNew reserved std::vector";
+    cout << "\nNew, reserved std::vector\n";
     std::array<std::vector<blob>, vecN> vectors2;
     for(auto& v: vectors2) v.reserve(testN);
     m.start();
     test(testN, vectors2, logs);
     m.stop();
     //showLog(testN, logs);
+    showMMap();
 
     // Reserved after mem release
-    cout << "\nReal free (swap) of std::vector(s)";
+    cout << "\nReal free (swap) of std::vector(s)\n";
     m.start();
     realFree(vectors1);
     realFree(vectors2);
     m.stop();
-    cout << "\nAgain reserved std::vector ";
+    showMMap();
+
+    cout << "\nAgain reserved std::vector (not faster -> no-reuse)\n";
     m.start();
     for(auto& v: vectors1) v.reserve(testN);
     test(testN, vectors1, logs);
     m.stop();
     //showLog(testN, logs);
+    showMMap();
 
     // MAP_POPULATE allocator 
-    cout << "\nMAP_POPULATE mmap allocator";
+    cout << "\nMAP_POPULATE, mmap allocator\n";
     std::array<std::vector<blob, mmap_alloc<blob>>, vecN> vmmap_r;
     m.start();
     for(auto& v:vmmap_r) v.reserve(testN);
@@ -199,7 +228,7 @@ void testVector()
     realFree(vmmap_r);
 
     // MAP_POPULATE allocator, count only inserting
-    cout << "\nMAP_POPULATE mmap, excluding reserve() time";
+    cout << "\nMAP_POPULATE, excluding reserve() time\n";
     for(auto& v:vmmap_r) v.reserve(testN);
     m.start();
     test(testN, vmmap_r, logs);
@@ -207,7 +236,7 @@ void testVector()
     //showLog(testN, logs);
     
     // MAP_POPULATE half-allocator 
-    cout << "\nHalf-MAP_POPULATE mmap allocator";
+    cout << "\n1/2 MAP_POPULATE, mmap allocator\n";
     std::array<std::vector<blob, mmap_half_alloc<blob>>, vecN> vHmmap_r;
     m.start();
     for(auto& v:vHmmap_r) v.reserve(testN);
@@ -217,7 +246,7 @@ void testVector()
     realFree(vHmmap_r);
 
     // MAP_POPULATE half-allocator 
-    cout << "\nHalf-MAP_POPULATE mmap. excluding reserve() time";
+    cout << "\n1/2 MAP_POPULATE, excluding reserve() time\n";
     for(auto& v:vHmmap_r) v.reserve(testN);
     m.start();
     test(testN, vHmmap_r, logs);
@@ -229,6 +258,7 @@ void testVector()
 int main(int argc, char** argv)
 {
     testVector();
+    cout << "\nBefore exit ";
     showMMap();
 }
 

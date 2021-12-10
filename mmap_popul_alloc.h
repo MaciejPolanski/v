@@ -16,6 +16,7 @@ struct mmap_alloc
     if (n > std::numeric_limits<std::size_t>::max() / sizeof(T))
       throw std::bad_array_new_length();
    
+    // Copycat of glibc malloc, that also allocates small mem on heap
     if (n*sizeof(T) < libcTreshold) {
         return static_cast<T*>(malloc(n*sizeof(T)));
     }
@@ -33,7 +34,7 @@ struct mmap_alloc
  
   void deallocate(T* p, std::size_t n) noexcept {
     if (n*sizeof(T) < libcTreshold) {
-        free(p);
+        return free(p);
     }
     munmap(p, n*sizeof(T));
   }
