@@ -6,6 +6,7 @@
 #include <fstream>
 #include <algorithm>
 #include <functional>
+#include <set>
 
 #include <sys/resource.h>
 #include "perf_event/proc_statm.h"
@@ -41,6 +42,24 @@ struct p2s_t {
 };
 p2s_t p2s{};
 
+// Formatting 48bit adresses in two parts
+struct addr{
+    uintptr_t l;
+    addr(uintptr_t _l): l(_l){} 
+    addr(void * v): l(reinterpret_cast<uintptr_t>(v)){}
+
+    friend std::ostream& operator<<(std::ostream &o, addr a)
+    {
+        const uint bits{24};
+        const uintptr_t mask = std::numeric_limits<uintptr_t>::max() >> (sizeof(uintptr_t) * 8 - bits);
+        o << "0x";
+        o << setw(bits/4) << std::hex << (a.l >> bits) << ":";
+        o << std::setfill('0') << setw(bits/4) << (a.l & mask) << std::setfill(' ');
+        o << std::dec;
+        return o;
+    }
+};
+
 // Logging parameters of vector after push
 struct oneLog{
     std::size_t size;
@@ -60,33 +79,64 @@ void showLog(int testN, std::array<oneLog, elemN>& logs)
         long ptrdiff = (char*)log.ptr - (char*)oldPtr;
         // cout << setw(2) << i << ", ";
         cout << setw(8) << log.size << ", " << setw(10) << mem2str(sizeof(blob) * log.capacity) << "  ";
-        cout << log.ptr << " diff " << setw(10) << mem2str(ptrdiff) <<"\n";
+        cout << addr{log.ptr} << " diff " << setw(10) << mem2str(ptrdiff) <<"\n";
         oldPtr = log.ptr;
     }
 }
 
 // Showing mmap'ed memory
-void showMMap()
-{
-    cout << "Anonumous mmap: ";
-    // Most likely parallel usage of kernel service and malloc crashes
-    std::ifstream is{"/proc/self/maps"};
-    std::string s;
-    while (std::getline(is, s)) {
-        std::istringstream buf{s};
-        long mmStart, mmEnd;
-        char dash;
-        buf >> std::hex >> mmStart >> dash >> std::hex >> mmEnd;
-        std::array<std::string, 5> ss;
-        std::for_each(ss.begin(), ss.end(), [&](std::string& s1){ buf >> s1;});
-        if (ss[2] != "00:00" || ss[4] != "")
-            continue;
-        //cout << "\n" << std::hex << mmStart << " - " << std::hex << mmEnd << " "; 
-        cout << mem2str(mmEnd - mmStart) << ", " << ss[4];
-        //cout <<" \n";
-    };
-    cout << "\n";
-}
+class cMMap {
+    std::set<uintptr_t> dontshow;
+
+    template <typename F>
+    void walker(F f)
+    {
+        std::ifstream is{"/proc/self/maps"};
+        std::string s;
+        while (std::getline(is, s)) {
+            std::istringstream buf{s};
+            uintptr_t mmStart, mmEnd;
+            char dash;
+            buf >> std::hex >> mmStart >> dash >> std::hex >> mmEnd;
+            std::array<std::string, 5> ss;
+            std::for_each(ss.begin(), ss.end(), [&](std::string& s1){ buf >> s1;});
+            // Always skip mapped files
+            if (ss[2] != "00:00") 
+                continue;   
+            // Skip non-dynamic
+            if (dontshow.find(mmStart) != dontshow.end())
+                continue;
+            f(mmStart, mmEnd, ss[4]);
+        };
+    }
+    public:
+    void lines() {
+        cout << "Anonimous mmap: ";
+        walker([](uintptr_t mmStart, uintptr_t mmEnd, std::string s) { 
+            cout << "\n" << std::hex << addr{mmStart} << " - " << std::hex << addr{mmEnd} << " "; 
+            cout << setw(8) << mem2str(mmEnd - mmStart) << s; 
+        });
+        cout << "\n";
+    }
+
+    void oneLine() {
+        cout << "Anonimous mmap: ";
+        walker([](uintptr_t mmStart, uintptr_t mmEnd, std::string s)
+                { cout << mem2str(mmEnd - mmStart) << ", "; });
+        cout << "\n";
+    }
+    // Gathers memory adresses to not be listed   
+    void init() {
+        dontshow.clear();
+        //cout << "Skipping mmaps: ";
+        walker([&](uintptr_t mmStart, uintptr_t mmEnd, std::string s){
+            dontshow.insert(mmStart);
+            //cout << addr{mmStart} << " ";
+        });
+        //cout << "\n";
+    }
+};
+cMMap showMMap{};
 
 // Counters before/after tests
 struct cMeasurments{
@@ -148,7 +198,7 @@ void testVector()
 
     cout << "+--Data size: " << mem2str(sizeof(blob) * elemN * vecN) << ", ";
     cout << elemN << " elements of size " << sizeof(blob) << " in " << vecN << " vectors--+\n";
-    showMMap();
+    showMMap.init();
 
     // Absoulutely standard use of vector   
     cout << "\nSingle-step pushing into std::vector(s)\n";
@@ -157,7 +207,7 @@ void testVector()
     test(testN, vectors1, logs);
     m.stop();
     showLog(testN, logs);
-    showMMap();
+    showMMap.oneLine();
 
     // Reused clear() vectors
     cout << "\nReusing std::vector cleared with clear()\n";
@@ -166,7 +216,7 @@ void testVector()
     test(testN, vectors1, logs);
     m.stop();
     //showLog(testN, logs);
-    //showMMap();
+    //showMMap.oneLine();
 
     // MAP_POPULATE allocator
     cout << "\nSingle-step, mmap allocator, MAP_POPULATE\n";
@@ -175,10 +225,10 @@ void testVector()
     test(testN, vmmap, logs);
     m.stop();
     showLog(testN, logs);
-    showMMap();
+    showMMap.oneLine();
     cout << "Real free of MAP_POPULATE vector\n";
     realFree(vmmap);
-    showMMap();
+    showMMap.oneLine();
     
     // MAP_POPULATE half allocator
     cout << "\nSingle-step, map allocator, 1/2 MAP_POPULATE\n";
@@ -198,8 +248,8 @@ void testVector()
     m.start();
     test(testN, vectors2, logs);
     m.stop();
-    //showLog(testN, logs);
-    showMMap();
+    showLog(testN, logs);
+    showMMap.lines();
 
     // Reserved after mem release
     cout << "\nReal free (swap) of std::vector(s)\n";
@@ -207,15 +257,15 @@ void testVector()
     realFree(vectors1);
     realFree(vectors2);
     m.stop();
-    showMMap();
+    showMMap.oneLine();
 
-    cout << "\nAgain reserved std::vector (not faster -> no-reuse)\n";
+    cout << "\nAgain reserved std::vector (not faster -> no mem reuse)\n";
     m.start();
     for(auto& v: vectors1) v.reserve(testN);
     test(testN, vectors1, logs);
     m.stop();
     //showLog(testN, logs);
-    showMMap();
+    showMMap.oneLine();
 
     // MAP_POPULATE allocator 
     cout << "\nMAP_POPULATE, mmap allocator\n";
@@ -259,7 +309,7 @@ int main(int argc, char** argv)
 {
     testVector();
     cout << "\nBefore exit ";
-    showMMap();
+    showMMap.oneLine();
 }
 
 //   Kernel memory page allocation calls:
