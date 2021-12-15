@@ -111,7 +111,7 @@ class cMMap {
     }
     public:
     void lines() {
-        cout << "Anonimous mmap: ";
+        cout << "Anonimous mmaps: ";
         walker([](uintptr_t mmStart, uintptr_t mmEnd, std::string s) { 
             cout << "\n" << std::hex << addr{mmStart} << " - " << std::hex << addr{mmEnd} << " "; 
             cout << setw(8) << mem2str(mmEnd - mmStart) << s; 
@@ -120,7 +120,7 @@ class cMMap {
     }
 
     void oneLine() {
-        cout << "Anonimous mmap: ";
+        cout << "Anonimous mmaps: ";
         walker([](uintptr_t mmStart, uintptr_t mmEnd, std::string s)
                 { cout << mem2str(mmEnd - mmStart) << ", "; });
         cout << "\n";
@@ -191,17 +191,14 @@ int test(int N,                                // N is # of push_backs
     return 1;
 }
 
-void testVector()
+void testVectors()
 {
     cMeasurments m;
     std::array<std::vector<blob>, vecN> vectors1;
 
-    cout << "+--Data size: " << mem2str(sizeof(blob) * elemN * vecN) << ", ";
-    cout << elemN << " elements of size " << sizeof(blob) << " in " << vecN << " vectors--+\n";
-    showMMap.init();
 
     // Absoulutely standard use of vector   
-    cout << "\nSingle-step pushing into std::vector(s)\n";
+    cout << "\nPushing one-by-one into std::vector(s)\n";
     int testN{elemN};
     m.start();
     test(testN, vectors1, logs);
@@ -210,7 +207,7 @@ void testVector()
     showMMap.oneLine();
 
     // Reused clear() vectors
-    cout << "\nReusing std::vector cleared with clear()\n";
+    cout << "\nReusing into std::vector cleared with clear()\n";
     for(auto& v: vectors1) v.clear();
     m.start();
     test(testN, vectors1, logs);
@@ -219,7 +216,7 @@ void testVector()
     //showMMap.oneLine();
 
     // MAP_POPULATE allocator
-    cout << "\nSingle-step, mmap allocator, MAP_POPULATE\n";
+    cout << "\nPushing into vector with mmap MAP_POPULATE\n";
     std::array<std::vector<blob, mmap_alloc<blob>>, vecN> vmmap;
     m.start();
     test(testN, vmmap, logs);
@@ -231,15 +228,22 @@ void testVector()
     showMMap.oneLine();
     
     // MAP_POPULATE half allocator
-    cout << "\nSingle-step, map allocator, 1/2 MAP_POPULATE\n";
-    std::array<std::vector<blob, mmap_half_alloc<blob>>, vecN> vHalfMmap;
+    cout << "\nPushing into vector with mmap 1/2 MAP_POPULATE\n";
+    std::array<std::vector<blob, mmap_alloc<blob, allocHalf>>, vecN> vHalfMmap;
     m.start();
     test(testN, vHalfMmap, logs);
     m.stop();
     //showLog(testN, logs);
     realFree(vHalfMmap);
+}
 
-    cout << "\n--- reserved vectors ---\n";
+void testReservedVectors()
+{
+    cMeasurments m;
+    std::array<std::vector<blob>, vecN> vectors1;
+    int testN{elemN};
+
+    cout << "\n+----------------- reserved vectors -----------------+\n";
 
     // Reserved vectors
     cout << "\nNew, reserved std::vector\n";
@@ -287,7 +291,7 @@ void testVector()
     
     // MAP_POPULATE half-allocator 
     cout << "\n1/2 MAP_POPULATE, mmap allocator\n";
-    std::array<std::vector<blob, mmap_half_alloc<blob>>, vecN> vHmmap_r;
+    std::array<std::vector<blob, mmap_alloc<blob, allocHalf>>, vecN> vHmmap_r;
     m.start();
     for(auto& v:vHmmap_r) v.reserve(testN);
     test(testN, vHmmap_r, logs);
@@ -307,7 +311,13 @@ void testVector()
 
 int main(int argc, char** argv)
 {
-    testVector();
+    cout << "+--Data size: " << mem2str(sizeof(blob) * elemN * vecN) << ", ";
+    cout << elemN << " elements of size " << sizeof(blob) << " in " << vecN << " vectors--+\n";
+    showMMap.init();
+
+    testVectors();
+    testReservedVectors();
+
     cout << "\nBefore exit ";
     showMMap.oneLine();
 }
