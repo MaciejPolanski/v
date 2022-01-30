@@ -3,38 +3,47 @@
 #include <atomic>
 #include <type_traits>
   
-// Size after which libc uses mmap. Esitimate that should be ok for now 
+// Size after which stdlib (mostlikely) uses mmap
 const std::size_t libcTreshold = 100 * 1024; 
 
-// Allocator with physical mapping and zeroing of whole allocated memory
+// Allocator that forces physical mapping (and zeroing) of memory
 // Should be used e.g. during reserve()
-typedef std::integral_constant<int,0x1> allocFull;
-typedef std::integral_constant<int,0x2> allocHalf;
+const int allocFull = 0x01;
+const int allocHalf = 0x02;
 
-template <class T, typename alloc = allocFull>
+template <class T, int alloc = allocFull>
 struct mmap_alloc
 {
   typedef T value_type;
   
   mmap_alloc() = default;
   constexpr mmap_alloc(const mmap_alloc<T, alloc>&) noexcept {}
+
+  // Why I need this to compile for God sake???
+  template<typename _T1>
+  struct rebind
+  {
+      typedef mmap_alloc<_T1> other;
+  };
  
-  [[nodiscard]] T* allocate(std::size_t n) {
+  // Workhorse
+  [[nodiscard]] T* allocate(std::size_t n) 
+  {
     if (n > std::numeric_limits<std::size_t>::max() / sizeof(T))
       throw std::bad_array_new_length();
    
-    // Copycat of glibc malloc, that also allocates small mem on heap
+    // Delegating small alloc to stdlib
     if (n*sizeof(T) < libcTreshold) {
         return static_cast<T*>(malloc(n*sizeof(T)));
     }
     void *pv;
-    if (std::is_same<alloc, allocFull>::value) {
-        // MAP_POPULATE for whole area
+    if (allocFull == alloc) {
+        // MAP_POPULATE (physical mapping) for whole memory
     	pv = mmap(NULL, n*sizeof(T), PROT_EXEC | PROT_READ | PROT_WRITE, 
             MAP_ANONYMOUS | MAP_PRIVATE | MAP_POPULATE, -1, 0);
     }
     else {
-        // MAP_POPULATE for 1/2 area
+        // MAP_POPULATE (physical mapping) for 1/2 area
         pv = mmap(NULL, n*sizeof(T), PROT_EXEC | PROT_READ | PROT_WRITE, 
             MAP_ANONYMOUS | MAP_PRIVATE, -1, 0);
         if (pv != MAP_FAILED) {
@@ -67,6 +76,7 @@ struct mmap_chunks {
 
 // Allocator preserving memory between allocations 
 // This should rather be implemented insid glibc alloc()
+/*
 template <class T>
 struct mmap_preserve_alloc
 {
@@ -97,4 +107,5 @@ struct mmap_preserve_alloc
     munmap(p, n*sizeof(T));
   }
 };
+*/
 

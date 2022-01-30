@@ -16,10 +16,10 @@ using std::cout;
 using std::setw;
 using std::to_string;
 
-const int elemN{100000};      // How many element push into vector
-const std::size_t vecN{  5};  // How many pararell vectors in each step 
-static_assert(vecN > 0);
-struct blob {                 // Block-Of-Bytes to be used 
+const int         N_pushes{100000};// # of pushes into vector
+const std::size_t M_vectors{  5};  // # of pararell vectors (to slow down process) 
+static_assert(M_vectors > 0);
+struct blob {                      // Block-Of-Bytes to be pushed into vectors
     unsigned char blob[1024];
 };
 
@@ -51,30 +51,30 @@ struct addr{
     friend std::ostream& operator<<(std::ostream &o, addr a)
     {
         const uint bits{24};
-        const uintptr_t mask = std::numeric_limits<uintptr_t>::max() >> (sizeof(uintptr_t) * 8 - bits);
+        const uintptr_t lo_mask = std::numeric_limits<uintptr_t>::max() >> (sizeof(uintptr_t) * 8 - bits);
         o << "0x";
         o << setw(bits/4) << std::hex << (a.l >> bits) << ":";
-        o << std::setfill('0') << setw(bits/4) << (a.l & mask) << std::setfill(' ');
+        o << std::setfill('0') << setw(bits/4) << (a.l & lo_mask) << std::setfill(' ');
         o << std::dec;
         return o;
     }
 };
 
-// Logging parameters of vector after push
-struct oneLog{
+// Logging internal state of vector after push_back
+struct stateOfVector{
     std::size_t size;
     std::size_t capacity;
     void* ptr;
 };
-std::array<oneLog, elemN> logs;
+using tStatesOfVector =  std::array<stateOfVector, N_pushes>;
 
-void showLog(int testN, std::array<oneLog, elemN>& logs)
+void printStatesOfVector(tStatesOfVector vectorStates)
 {
     cout << "1st vector (size/capa/buffer_addr/addr_change):\n";
     void *oldPtr{0};
-    for(int i = 0; i < testN; ++i){
-        auto& log = logs[i];
-        if (oldPtr == log.ptr && i < (testN - 1))
+    for(int i = 0; i < N_pushes; ++i){
+        auto& log = vectorStates[i];
+        if (oldPtr == log.ptr && i < (N_pushes- 1))
             continue;
         long ptrdiff = (char*)log.ptr - (char*)oldPtr;
         // cout << setw(2) << i << ", ";
@@ -84,10 +84,12 @@ void showLog(int testN, std::array<oneLog, elemN>& logs)
     }
 }
 
-// Showing mmap'ed memory
+// Prints chunks of process memory allocated with mmap
 class cMMap {
+    // Standard uninteresting process chunks
     std::set<uintptr_t> dontshow;
 
+    // Parser enumarating through chunks
     template <typename F>
     void walker(F f)
     {
@@ -109,7 +111,9 @@ class cMMap {
             f(mmStart, mmEnd, ss[4]);
         };
     }
+
     public:
+    // Print multi-lines
     void lines() {
         cout << "Anonimous mmaps: ";
         walker([](uintptr_t mmStart, uintptr_t mmEnd, std::string s) { 
@@ -118,14 +122,14 @@ class cMMap {
         });
         cout << "\n";
     }
-
+    // Print one-line
     void oneLine() {
         cout << "Anonimous mmaps: ";
         walker([](uintptr_t mmStart, uintptr_t mmEnd, std::string s)
                 { cout << mem2str(mmEnd - mmStart) << ", "; });
         cout << "\n";
     }
-    // Gathers memory adresses to not be listed   
+    // Collects memory adresses to not be listed later
     void init() {
         dontshow.clear();
         //cout << "Skipping mmaps: ";
@@ -153,6 +157,11 @@ struct cMeasurments{
 
     void stop(){
         clkE = clk.now();
+        std::chrono::milliseconds mili;
+        mili  = std::chrono::duration_cast<std::chrono::milliseconds>(clkE - clkS);
+        cout << " t: " << mili.count() << " ms";
+        cout << "\n";
+
         rusage us;
         getrusage(RUSAGE_SELF, &us);
         ProcStatm ps;
@@ -160,9 +169,6 @@ struct cMeasurments{
         //cout <<  "max rss: "  << mem2str(us.ru_maxrss * 1024);
         cout << "vms: " << p2s(ps.size) << " rss: " << p2s(ps.resident);
         cout <<  " page fault: "  << us.ru_minflt - minFlt;
-        std::chrono::milliseconds mili;
-        mili  = std::chrono::duration_cast<std::chrono::milliseconds>(clkE - clkS);
-        cout << " t: " << mili.count() << " ms";
         cout << "\n";
     }
 };
@@ -175,18 +181,17 @@ void realFree(T& t)
 }
 
 // Testing workhorse
-template<typename T_vector, std::size_t M>
-int test(int N,                                // N is # of push_backs
-         std::array<T_vector, M>& testVectors, // Vectors can be preinitialized 
-         std::array<oneLog, elemN>& logs)      // Per-loop measurments
+template<typename T_vector>
+int test(std::array<T_vector, M_vectors>& testVectors, // Vectors can be given preallocated
+         tStatesOfVector& vectorStates)                // Returned per-loop measurments
 {
-    for(int i =0; i < N; ++i){
+    for(int i =0; i < N_pushes; ++i){
         for(auto& v: testVectors){
             v.emplace_back(blob{});
         }
-        logs[i].size = testVectors[0].size();
-        logs[i].capacity = testVectors[0].capacity();
-        logs[i].ptr = &*testVectors[0].begin();
+        vectorStates[i].size = testVectors[0].size();
+        vectorStates[i].capacity = testVectors[0].capacity();
+        vectorStates[i].ptr = &*testVectors[0].begin();
     }
     return 1;
 }
@@ -194,34 +199,33 @@ int test(int N,                                // N is # of push_backs
 void testVectors()
 {
     cMeasurments m;
-    std::array<std::vector<blob>, vecN> vectors1;
-
+    tStatesOfVector logs;
+    std::array<std::vector<blob>, M_vectors> vectors1;
 
     // Absoulutely standard use of vector   
     cout << "\nPushing one-by-one into std::vector(s)\n";
-    int testN{elemN};
     m.start();
-    test(testN, vectors1, logs);
+    test(vectors1, logs);
     m.stop();
-    showLog(testN, logs);
+    printStatesOfVector(logs);
     showMMap.oneLine();
 
     // Reused clear() vectors
     cout << "\nReusing into std::vector cleared with clear()\n";
     for(auto& v: vectors1) v.clear();
     m.start();
-    test(testN, vectors1, logs);
+    test(vectors1, logs);
     m.stop();
-    //showLog(testN, logs);
-    //showMMap.oneLine();
+    printStatesOfVector(logs);
+    showMMap.oneLine();
 
     // MAP_POPULATE allocator
     cout << "\nPushing into vector with mmap MAP_POPULATE\n";
-    std::array<std::vector<blob, mmap_alloc<blob>>, vecN> vmmap;
+    std::array<std::vector<blob, mmap_alloc<blob>>, M_vectors> vmmap;
     m.start();
-    test(testN, vmmap, logs);
+    test(vmmap, logs);
     m.stop();
-    showLog(testN, logs);
+    printStatesOfVector(logs);
     showMMap.oneLine();
     cout << "Real free of MAP_POPULATE vector\n";
     realFree(vmmap);
@@ -229,33 +233,33 @@ void testVectors()
     
     // MAP_POPULATE half allocator
     cout << "\nPushing into vector with mmap 1/2 MAP_POPULATE\n";
-    std::array<std::vector<blob, mmap_alloc<blob, allocHalf>>, vecN> vHalfMmap;
+    std::array<std::vector<blob, mmap_alloc<blob, allocHalf>>, M_vectors> vHalfMmap;
     m.start();
-    test(testN, vHalfMmap, logs);
+    test(vHalfMmap, logs);
     m.stop();
-    //showLog(testN, logs);
+    //printStatesOfVector(logs);
     realFree(vHalfMmap);
 }
 
 void testReservedVectors()
 {
     cMeasurments m;
-    std::array<std::vector<blob>, vecN> vectors1;
-    int testN{elemN};
+    tStatesOfVector logs;
+    std::array<std::vector<blob>, M_vectors> vectors1;
 
     cout << "\n+----------------- reserved vectors -----------------+\n";
 
     // Reserved vectors
     cout << "\nNew, reserved std::vector\n";
-    std::array<std::vector<blob>, vecN> vectors2;
-    for(auto& v: vectors2) v.reserve(testN);
+    std::array<std::vector<blob>, M_vectors> vectors2;
+    for(auto& v: vectors2) v.reserve(N_pushes);
     m.start();
-    test(testN, vectors2, logs);
+    test(vectors2, logs);
     m.stop();
-    showLog(testN, logs);
+    printStatesOfVector(logs);
     showMMap.lines();
 
-    // Reserved after mem release
+    // True memory release by swap
     cout << "\nReal free (swap) of std::vector(s)\n";
     m.start();
     realFree(vectors1);
@@ -265,54 +269,54 @@ void testReservedVectors()
 
     cout << "\nAgain reserved std::vector (not faster -> no mem reuse)\n";
     m.start();
-    for(auto& v: vectors1) v.reserve(testN);
-    test(testN, vectors1, logs);
+    for(auto& v: vectors1) v.reserve(N_pushes);
+    test(vectors1, logs);
     m.stop();
-    //showLog(testN, logs);
+    //printStatesOfVector(logs);
     showMMap.oneLine();
 
     // MAP_POPULATE allocator 
     cout << "\nMAP_POPULATE, mmap allocator\n";
-    std::array<std::vector<blob, mmap_alloc<blob>>, vecN> vmmap_r;
+    std::array<std::vector<blob, mmap_alloc<blob>>, M_vectors> vmmap_r;
     m.start();
-    for(auto& v:vmmap_r) v.reserve(testN);
-    test(testN, vmmap_r, logs);
+    for(auto& v:vmmap_r) v.reserve(N_pushes);
+    test(vmmap_r, logs);
     m.stop();
-    //showLog(testN, logs);
+    //printStatesOfVector(logs);
     realFree(vmmap_r);
 
     // MAP_POPULATE allocator, count only inserting
     cout << "\nMAP_POPULATE, excluding reserve() time\n";
-    for(auto& v:vmmap_r) v.reserve(testN);
+    for(auto& v:vmmap_r) v.reserve(N_pushes);
     m.start();
-    test(testN, vmmap_r, logs);
+    test(vmmap_r, logs);
     m.stop();
-    //showLog(testN, logs);
+    //printStatesOfVector(logs);
     
     // MAP_POPULATE half-allocator 
     cout << "\n1/2 MAP_POPULATE, mmap allocator\n";
-    std::array<std::vector<blob, mmap_alloc<blob, allocHalf>>, vecN> vHmmap_r;
+    std::array<std::vector<blob, mmap_alloc<blob, allocHalf>>, M_vectors> vHmmap_r;
     m.start();
-    for(auto& v:vHmmap_r) v.reserve(testN);
-    test(testN, vHmmap_r, logs);
+    for(auto& v:vHmmap_r) v.reserve(N_pushes);
+    test(vHmmap_r, logs);
     m.stop();
-    //showLog(testN, logs);
+    //printStatesOfVector(logs);
     realFree(vHmmap_r);
 
     // MAP_POPULATE half-allocator 
     cout << "\n1/2 MAP_POPULATE, excluding reserve() time\n";
-    for(auto& v:vHmmap_r) v.reserve(testN);
+    for(auto& v:vHmmap_r) v.reserve(N_pushes);
     m.start();
-    test(testN, vHmmap_r, logs);
+    test(vHmmap_r, logs);
     m.stop();
-    //showLog(testN, logs);
+    //printStatesOfVector(logs);
     realFree(vHmmap_r);
 }
 
 int main(int argc, char** argv)
 {
-    cout << "+--Data size: " << mem2str(sizeof(blob) * elemN * vecN) << ", ";
-    cout << elemN << " elements of size " << sizeof(blob) << " in " << vecN << " vectors--+\n";
+    cout << "+--Data size: " << mem2str(sizeof(blob) * N_pushes * M_vectors) << ", ";
+    cout << N_pushes << " elements of size " << sizeof(blob) << " in " << M_vectors << " vectors--+\n";
     showMMap.init();
 
     testVectors();
