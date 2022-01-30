@@ -96,6 +96,7 @@ class cMMap {
         std::ifstream is{"/proc/self/maps"};
         std::string s;
         while (std::getline(is, s)) {
+            // 7ffda19f6000-7ffda1a17000 rw-p 00000000 00:00 0 [stack]
             std::istringstream buf{s};
             uintptr_t mmStart, mmEnd;
             char dash;
@@ -108,6 +109,9 @@ class cMMap {
             // Skip non-dynamic
             if (dontshow.find(mmStart) != dontshow.end())
                 continue;
+            // Stack grows downwards, so needs special rule for exclusion
+            if (ss[4] == "[stack]")
+                continue;
             f(mmStart, mmEnd, ss[4]);
         };
     }
@@ -117,7 +121,7 @@ class cMMap {
     void lines() {
         cout << "Anonimous mmaps: ";
         walker([](uintptr_t mmStart, uintptr_t mmEnd, std::string s) { 
-            cout << "\n" << std::hex << addr{mmStart} << " - " << std::hex << addr{mmEnd} << " "; 
+            cout << "\n[" << std::hex << addr{mmStart} << " - " << std::hex << addr{mmEnd} << " "; 
             cout << setw(8) << mem2str(mmEnd - mmStart) << s; 
         });
         cout << "\n";
@@ -203,7 +207,7 @@ void testVectors()
     std::array<std::vector<blob>, M_vectors> vectors1;
 
     // Absoulutely standard use of vector   
-    cout << "\nPushing one-by-one into std::vector(s)\n";
+    cout << "\n[Pushing one-by-one into std::vector(s)                ]";
     m.start();
     test(vectors1, logs);
     m.stop();
@@ -211,7 +215,7 @@ void testVectors()
     showMMap.oneLine();
 
     // Reused clear() vectors
-    cout << "\nReusing into std::vector cleared with clear()\n";
+    cout << "\n[Reusing into std::vector cleared with clear()         ]";
     for(auto& v: vectors1) v.clear();
     m.start();
     test(vectors1, logs);
@@ -220,19 +224,19 @@ void testVectors()
     showMMap.oneLine();
 
     // MAP_POPULATE allocator
-    cout << "\nPushing into vector with mmap MAP_POPULATE\n";
+    cout << "\n[Pushing into vector with mmap MAP_POPULATE            ]";
     std::array<std::vector<blob, mmap_alloc<blob>>, M_vectors> vmmap;
     m.start();
     test(vmmap, logs);
     m.stop();
     printStatesOfVector(logs);
     showMMap.oneLine();
-    cout << "Real free of MAP_POPULATE vector\n";
+    cout << "After swap-free of MAP_POPULATE vector:\n";
     realFree(vmmap);
     showMMap.oneLine();
     
     // MAP_POPULATE half allocator
-    cout << "\nPushing into vector with mmap 1/2 MAP_POPULATE\n";
+    cout << "\n[Pushing into vector with mmap 1/2 MAP_POPULATE        ]";
     std::array<std::vector<blob, mmap_alloc<blob, allocHalf>>, M_vectors> vHalfMmap;
     m.start();
     test(vHalfMmap, logs);
@@ -245,38 +249,45 @@ void testReservedVectors()
 {
     cMeasurments m;
     tStatesOfVector logs;
-    std::array<std::vector<blob>, M_vectors> vectors1;
 
-    cout << "\n+----------------- reserved vectors -----------------+\n";
+    cout << "\n[+----------------- reserved vectors -----------------+]";
 
     // Reserved vectors
-    cout << "\nNew, reserved std::vector\n";
-    std::array<std::vector<blob>, M_vectors> vectors2;
-    for(auto& v: vectors2) v.reserve(N_pushes);
+    cout << "\n[New, reserved std::vector                             ]";
+    std::array<std::vector<blob>, M_vectors> vectors1;
+    for(auto& v: vectors1) v.reserve(N_pushes);
     m.start();
-    test(vectors2, logs);
+    test(vectors1, logs);
     m.stop();
     printStatesOfVector(logs);
     showMMap.lines();
 
     // True memory release by swap
-    cout << "\nReal free (swap) of std::vector(s)\n";
+    cout << "\n[Real free (swap) of std::vector(s)                    ]";
     m.start();
     realFree(vectors1);
-    realFree(vectors2);
     m.stop();
     showMMap.oneLine();
 
-    cout << "\nAgain reserved std::vector (not faster -> no mem reuse)\n";
+    cout << "\n[Again reserved vector (not faster -> no mem reuse)    ]";
     m.start();
     for(auto& v: vectors1) v.reserve(N_pushes);
     test(vectors1, logs);
     m.stop();
     //printStatesOfVector(logs);
     showMMap.oneLine();
+    realFree(vectors1);
 
-    // MAP_POPULATE allocator 
-    cout << "\nMAP_POPULATE, mmap allocator\n";
+    cout << "\n[Time excluding reserve() (proof reserve does nothing) ]";
+    for(auto& v: vectors1) v.reserve(N_pushes);
+    m.start();
+    test(vectors1, logs);
+    m.stop();
+    //printStatesOfVector(logs);
+    showMMap.oneLine();
+
+     // MAP_POPULATE allocator 
+    cout << "\n[MAP_POPULATE, mmap allocator                          ]";
     std::array<std::vector<blob, mmap_alloc<blob>>, M_vectors> vmmap_r;
     m.start();
     for(auto& v:vmmap_r) v.reserve(N_pushes);
@@ -286,7 +297,7 @@ void testReservedVectors()
     realFree(vmmap_r);
 
     // MAP_POPULATE allocator, count only inserting
-    cout << "\nMAP_POPULATE, excluding reserve() time\n";
+    cout << "\n[MAP_POPULATE, excluding reserve() time                ]";
     for(auto& v:vmmap_r) v.reserve(N_pushes);
     m.start();
     test(vmmap_r, logs);
@@ -294,7 +305,7 @@ void testReservedVectors()
     //printStatesOfVector(logs);
     
     // MAP_POPULATE half-allocator 
-    cout << "\n1/2 MAP_POPULATE, mmap allocator\n";
+    cout << "\n[1/2 MAP_POPULATE, mmap allocator                      ]";
     std::array<std::vector<blob, mmap_alloc<blob, allocHalf>>, M_vectors> vHmmap_r;
     m.start();
     for(auto& v:vHmmap_r) v.reserve(N_pushes);
@@ -304,7 +315,7 @@ void testReservedVectors()
     realFree(vHmmap_r);
 
     // MAP_POPULATE half-allocator 
-    cout << "\n1/2 MAP_POPULATE, excluding reserve() time\n";
+    cout << "\n[1/2 MAP_POPULATE, excluding reserve() time            ]";
     for(auto& v:vHmmap_r) v.reserve(N_pushes);
     m.start();
     test(vHmmap_r, logs);
