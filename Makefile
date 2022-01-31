@@ -1,5 +1,6 @@
+$(info ***************         Start here         *************)
 all:
-	g++ main.cpp ./perf_event/proc_statm.c
+	g++ main.cpp ./stackoverflow/proc_statm.c
 
 test:
 	./a.out

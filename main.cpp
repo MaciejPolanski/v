@@ -1,3 +1,5 @@
+// Copyright Maciej Polanski
+
 #include <iostream>
 #include <array>
 #include <vector>
@@ -7,33 +9,22 @@
 #include <algorithm>
 #include <functional>
 #include <set>
-
 #include <sys/resource.h>
-#include "perf_event/proc_statm.h"
-#include "mmap_popul_alloc.h"
+
+#include "stackoverflow/proc_statm.h"
+#include "memory_maps.h"
+#include "v_allocator.h"
 
 using std::cout;
 using std::setw;
 using std::to_string;
 
-const int         N_pushes{100000};// # of pushes into vector
-const std::size_t M_vectors{  5};  // # of pararell vectors (to slow down process) 
+const int         N_pushes{10000};// # of pushes into vector
+const std::size_t M_vectors{ 50};  // # of pararell vectors (to slow down process) 
 static_assert(M_vectors > 0);
 struct blob {                      // Block-Of-Bytes to be pushed into vectors
     unsigned char blob[1024];
 };
-
-// String fromating for bytes
-std::string mem2str(long m)
-{
-    if ( abs(m / 1024 / 1024 / 1024 / 10) > 0 )
-        return to_string(m/1024/1024/1024) + " GB";
-    if ( abs(m / 1024 / 1024 / 10) > 0 )
-        return to_string(m/1024/1024) + " MB";
-    if ( abs(m / 1024 / 10) > 0 )
-        return to_string(m/1024) + " KB";
-    return to_string(m) + "  B";
-}
 
 // PFN (Page Frame Number) to bytes
 struct p2s_t {
@@ -41,24 +32,6 @@ struct p2s_t {
     std::string operator()(long m) { return mem2str(m * page_size);}
 };
 p2s_t p2s{};
-
-// Formatting 48bit adresses in two parts
-struct addr{
-    uintptr_t l;
-    addr(uintptr_t _l): l(_l){} 
-    addr(void * v): l(reinterpret_cast<uintptr_t>(v)){}
-
-    friend std::ostream& operator<<(std::ostream &o, addr a)
-    {
-        const uint bits{24};
-        const uintptr_t lo_mask = std::numeric_limits<uintptr_t>::max() >> (sizeof(uintptr_t) * 8 - bits);
-        o << "0x";
-        o << setw(bits/4) << std::hex << (a.l >> bits) << ":";
-        o << std::setfill('0') << setw(bits/4) << (a.l & lo_mask) << std::setfill(' ');
-        o << std::dec;
-        return o;
-    }
-};
 
 // Logging internal state of vector after push_back
 struct stateOfVector{
@@ -84,70 +57,10 @@ void printStatesOfVector(tStatesOfVector vectorStates)
     }
 }
 
-// Prints chunks of process memory allocated with mmap
-class cMMap {
-    // Standard uninteresting process chunks
-    std::set<uintptr_t> dontshow;
-
-    // Parser enumarating through chunks
-    template <typename F>
-    void walker(F f)
-    {
-        std::ifstream is{"/proc/self/maps"};
-        std::string s;
-        while (std::getline(is, s)) {
-            // 7ffda19f6000-7ffda1a17000 rw-p 00000000 00:00 0 [stack]
-            std::istringstream buf{s};
-            uintptr_t mmStart, mmEnd;
-            char dash;
-            buf >> std::hex >> mmStart >> dash >> std::hex >> mmEnd;
-            std::array<std::string, 5> ss;
-            std::for_each(ss.begin(), ss.end(), [&](std::string& s1){ buf >> s1;});
-            // Always skip mapped files
-            if (ss[2] != "00:00") 
-                continue;   
-            // Skip non-dynamic
-            if (dontshow.find(mmStart) != dontshow.end())
-                continue;
-            // Stack grows downwards, so needs special rule for exclusion
-            if (ss[4] == "[stack]")
-                continue;
-            f(mmStart, mmEnd, ss[4]);
-        };
-    }
-
-    public:
-    // Print multi-lines
-    void lines() {
-        cout << "Anonimous mmaps: ";
-        walker([](uintptr_t mmStart, uintptr_t mmEnd, std::string s) { 
-            cout << "\n[" << std::hex << addr{mmStart} << " - " << std::hex << addr{mmEnd} << " "; 
-            cout << setw(8) << mem2str(mmEnd - mmStart) << s; 
-        });
-        cout << "\n";
-    }
-    // Print one-line
-    void oneLine() {
-        cout << "Anonimous mmaps: ";
-        walker([](uintptr_t mmStart, uintptr_t mmEnd, std::string s)
-                { cout << mem2str(mmEnd - mmStart) << ", "; });
-        cout << "\n";
-    }
-    // Collects memory adresses to not be listed later
-    void init() {
-        dontshow.clear();
-        //cout << "Skipping mmaps: ";
-        walker([&](uintptr_t mmStart, uintptr_t mmEnd, std::string s){
-            dontshow.insert(mmStart);
-            //cout << addr{mmStart} << " ";
-        });
-        //cout << "\n";
-    }
-};
-cMMap showMMap{};
+cPrintMemoryMaps printMaps{};
 
 // Counters before/after tests
-struct cMeasurments{
+struct cStats{
     std::chrono::steady_clock clk;
     std::chrono::steady_clock::time_point clkS, clkE;
     long minFlt;
@@ -200,9 +113,12 @@ int test(std::array<T_vector, M_vectors>& testVectors, // Vectors can be given p
     return 1;
 }
 
+using mmapPopulateFull = v_allocator::mmapPopulate<blob, v_allocator::mmapPopulate_base::popFull>;
+using mmapPopulateHalf = v_allocator::mmapPopulate<blob, v_allocator::mmapPopulate_base::popHalf>;
+
 void testVectors()
 {
-    cMeasurments m;
+    cStats m;
     tStatesOfVector logs;
     std::array<std::vector<blob>, M_vectors> vectors1;
 
@@ -212,7 +128,7 @@ void testVectors()
     test(vectors1, logs);
     m.stop();
     printStatesOfVector(logs);
-    showMMap.oneLine();
+    printMaps.oneLine();
 
     // Reused clear() vectors
     cout << "\n[Reusing into std::vector cleared with clear()         ]";
@@ -220,24 +136,24 @@ void testVectors()
     m.start();
     test(vectors1, logs);
     m.stop();
-    printStatesOfVector(logs);
-    showMMap.oneLine();
+    //printStatesOfVector(logs);
+    printMaps.oneLine();
 
     // MAP_POPULATE allocator
     cout << "\n[Pushing into vector with mmap MAP_POPULATE            ]";
-    std::array<std::vector<blob, mmap_alloc<blob>>, M_vectors> vmmap;
+    std::array<std::vector<blob, mmapPopulateFull>, M_vectors> vmmap;
     m.start();
     test(vmmap, logs);
     m.stop();
     printStatesOfVector(logs);
-    showMMap.oneLine();
+    printMaps.oneLine();
     cout << "After swap-free of MAP_POPULATE vector:\n";
     realFree(vmmap);
-    showMMap.oneLine();
+    printMaps.oneLine();
     
     // MAP_POPULATE half allocator
     cout << "\n[Pushing into vector with mmap 1/2 MAP_POPULATE        ]";
-    std::array<std::vector<blob, mmap_alloc<blob, allocHalf>>, M_vectors> vHalfMmap;
+    std::array<std::vector<blob, mmapPopulateHalf>, M_vectors> vHalfMmap;
     m.start();
     test(vHalfMmap, logs);
     m.stop();
@@ -247,10 +163,10 @@ void testVectors()
 
 void testReservedVectors()
 {
-    cMeasurments m;
+    cStats m;
     tStatesOfVector logs;
 
-    cout << "\n[+----------------- reserved vectors -----------------+]";
+    cout << "\n[+---------------------- reserved vectors ----------------------+]";
 
     // Reserved vectors
     cout << "\n[New, reserved std::vector                             ]";
@@ -260,22 +176,22 @@ void testReservedVectors()
     test(vectors1, logs);
     m.stop();
     printStatesOfVector(logs);
-    showMMap.lines();
+    printMaps.oneLine();
 
     // True memory release by swap
     cout << "\n[Real free (swap) of std::vector(s)                    ]";
     m.start();
     realFree(vectors1);
     m.stop();
-    showMMap.oneLine();
+    //printMaps.multiLine();
 
     cout << "\n[Again reserved vector (not faster -> no mem reuse)    ]";
     m.start();
     for(auto& v: vectors1) v.reserve(N_pushes);
     test(vectors1, logs);
     m.stop();
-    //printStatesOfVector(logs);
-    showMMap.oneLine();
+    printStatesOfVector(logs);
+    printMaps.oneLine();
     realFree(vectors1);
 
     cout << "\n[Time excluding reserve() (proof reserve does nothing) ]";
@@ -284,16 +200,18 @@ void testReservedVectors()
     test(vectors1, logs);
     m.stop();
     //printStatesOfVector(logs);
-    showMMap.oneLine();
+    //printMaps.oneLine();
+    realFree(vectors1);
 
      // MAP_POPULATE allocator 
     cout << "\n[MAP_POPULATE, mmap allocator                          ]";
-    std::array<std::vector<blob, mmap_alloc<blob>>, M_vectors> vmmap_r;
+    std::array<std::vector<blob, mmapPopulateFull>, M_vectors> vmmap_r;
     m.start();
     for(auto& v:vmmap_r) v.reserve(N_pushes);
     test(vmmap_r, logs);
     m.stop();
     //printStatesOfVector(logs);
+    printMaps.oneLine();
     realFree(vmmap_r);
 
     // MAP_POPULATE allocator, count only inserting
@@ -303,15 +221,17 @@ void testReservedVectors()
     test(vmmap_r, logs);
     m.stop();
     //printStatesOfVector(logs);
+    realFree(vmmap_r);
     
     // MAP_POPULATE half-allocator 
     cout << "\n[1/2 MAP_POPULATE, mmap allocator                      ]";
-    std::array<std::vector<blob, mmap_alloc<blob, allocHalf>>, M_vectors> vHmmap_r;
+    std::array<std::vector<blob, mmapPopulateHalf>, M_vectors> vHmmap_r;
     m.start();
     for(auto& v:vHmmap_r) v.reserve(N_pushes);
     test(vHmmap_r, logs);
     m.stop();
     //printStatesOfVector(logs);
+    printMaps.oneLine();
     realFree(vHmmap_r);
 
     // MAP_POPULATE half-allocator 
@@ -328,13 +248,13 @@ int main(int argc, char** argv)
 {
     cout << "+--Data size: " << mem2str(sizeof(blob) * N_pushes * M_vectors) << ", ";
     cout << N_pushes << " elements of size " << sizeof(blob) << " in " << M_vectors << " vectors--+\n";
-    showMMap.init();
+    printMaps.init();
 
     testVectors();
     testReservedVectors();
 
     cout << "\nBefore exit ";
-    showMMap.oneLine();
+    printMaps.oneLine();
 }
 
 //   Kernel memory page allocation calls:

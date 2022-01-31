@@ -1,32 +1,39 @@
+// Copyright Maciej Polanski
+
 #include <sys/mman.h>
 #include <errno.h>
 #include <atomic>
 #include <type_traits>
+
+namespace v_allocator {
   
 // Size after which stdlib (mostlikely) uses mmap
 const std::size_t libcTreshold = 100 * 1024; 
 
-// Allocator that forces physical mapping (and zeroing) of memory
+// Allocator that forces instant physical mapping (thus zeroing) of memory
 // Should be used e.g. during reserve()
-const int allocFull = 0x01;
-const int allocHalf = 0x02;
 
-template <class T, int alloc = allocFull>
-struct mmap_alloc
+struct mmapPopulate_base {
+    static constexpr int popFull = 0x01;
+    static constexpr int popHalf = 0x02;
+};
+
+template <typename T, int alloc>
+struct mmapPopulate : public mmapPopulate_base
 {
-  typedef T value_type;
+  using value_type = T;
   
-  mmap_alloc() = default;
-  constexpr mmap_alloc(const mmap_alloc<T, alloc>&) noexcept {}
+  mmapPopulate() = default;
+  constexpr mmapPopulate(const mmapPopulate<T, alloc>&) noexcept {}
 
   // Why I need this to compile for God sake???
-  template<typename _T1>
+  template<typename T1>
   struct rebind
   {
-      typedef mmap_alloc<_T1> other;
+      using other = mmapPopulate<T1, alloc>;
   };
  
-  // Workhorse
+  // *** Workhorse ***
   [[nodiscard]] T* allocate(std::size_t n) 
   {
     if (n > std::numeric_limits<std::size_t>::max() / sizeof(T))
@@ -37,7 +44,7 @@ struct mmap_alloc
         return static_cast<T*>(malloc(n*sizeof(T)));
     }
     void *pv;
-    if (allocFull == alloc) {
+    if (alloc == popFull) {
         // MAP_POPULATE (physical mapping) for whole memory
     	pv = mmap(NULL, n*sizeof(T), PROT_EXEC | PROT_READ | PROT_WRITE, 
             MAP_ANONYMOUS | MAP_PRIVATE | MAP_POPULATE, -1, 0);
@@ -76,7 +83,7 @@ struct mmap_chunks {
 
 // Allocator preserving memory between allocations 
 // This should rather be implemented insid glibc alloc()
-/*
+
 template <class T>
 struct mmap_preserve_alloc
 {
@@ -107,5 +114,5 @@ struct mmap_preserve_alloc
     munmap(p, n*sizeof(T));
   }
 };
-*/
 
+} // namespace v_allocator
