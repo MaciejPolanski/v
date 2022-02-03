@@ -18,6 +18,13 @@ std::string mem2str(long m)
     return to_string(m) + "  B";
 }
 
+// Page Frame Number to string
+struct pfn2s_t {
+    uintptr_t page_size;
+    pfn2s_t(uintptr_t _page_size):page_size(_page_size){}    
+    std::string operator()(long m) { return mem2str(m * page_size);}
+};
+
 // Formatting 48bit adresses in two parts
 struct addr{
     uintptr_t l;

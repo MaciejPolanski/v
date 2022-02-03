@@ -14,6 +14,7 @@ const std::size_t libcTreshold = 100 * 1024;
 // Should be used e.g. during reserve()
 
 struct mmapPopulate_base {
+    static constexpr int popNone = 0x00;
     static constexpr int popFull = 0x01;
     static constexpr int popHalf = 0x02;
 };
@@ -44,12 +45,17 @@ struct mmapPopulate : public mmapPopulate_base
         return static_cast<T*>(malloc(n*sizeof(T)));
     }
     void *pv;
-    if (alloc == popFull) {
+    if (alloc == popNone) {
+        // MAP_POPULATE (physical mapping) for whole memory
+    	pv = mmap(NULL, n*sizeof(T), PROT_EXEC | PROT_READ | PROT_WRITE, 
+            MAP_ANONYMOUS | MAP_PRIVATE, -1, 0);
+    }
+    else if (alloc == popFull) {
         // MAP_POPULATE (physical mapping) for whole memory
     	pv = mmap(NULL, n*sizeof(T), PROT_EXEC | PROT_READ | PROT_WRITE, 
             MAP_ANONYMOUS | MAP_PRIVATE | MAP_POPULATE, -1, 0);
     }
-    else {
+    else {  // alloc == popHalf
         // MAP_POPULATE (physical mapping) for 1/2 area
         pv = mmap(NULL, n*sizeof(T), PROT_EXEC | PROT_READ | PROT_WRITE, 
             MAP_ANONYMOUS | MAP_PRIVATE, -1, 0);
@@ -64,7 +70,7 @@ struct mmapPopulate : public mmapPopulate_base
     }
     //std::cout << "MMAP error: 0x" << std::hex << errno << "\n";
     // 0x16 - invalid argument
-    perror("MMAP alloc");
+    perror("mmapPopulate");
     throw std::bad_alloc();
   }
  

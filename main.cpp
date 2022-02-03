@@ -15,24 +15,22 @@
 #include "memory_maps.h"
 #include "v_allocator.h"
 
+constexpr uintptr_t page_size = 4096;
+
 using std::cout;
 using std::setw;
 using std::to_string;
 
-const int         N_pushes{10000};// # of pushes into vector
-const std::size_t M_vectors{ 50};  // # of pararell vectors (to slow down process) 
+const int         N_pushes{100000};// # of pushes into vector
+const std::size_t M_vectors{ 5};  // # of pararell vectors (to slow down process) 
 static_assert(M_vectors > 0);
 struct blob {                      // Block-Of-Bytes to be pushed into vectors
     unsigned char blob[1024];
 };
 
-// PFN (Page Frame Number) to bytes
-struct p2s_t {
-    const long page_size = 4096;
-    std::string operator()(long m) { return mem2str(m * page_size);}
-};
-p2s_t p2s{};
-
+cPrintMemoryMaps printMaps{};
+// PFN (Page Frame Number) to string
+pfn2s_t p2s{page_size};
 // Logging internal state of vector after push_back
 struct stateOfVector{
     std::size_t size;
@@ -43,7 +41,7 @@ using tStatesOfVector =  std::array<stateOfVector, N_pushes>;
 
 void printStatesOfVector(tStatesOfVector vectorStates)
 {
-    cout << "1st vector (size/capa/buffer_addr/addr_change):\n";
+    cout << "Vector history (size/capa/buffer_addr/addr_diff):\n";
     void *oldPtr{0};
     for(int i = 0; i < N_pushes; ++i){
         auto& log = vectorStates[i];
@@ -56,8 +54,6 @@ void printStatesOfVector(tStatesOfVector vectorStates)
         oldPtr = log.ptr;
     }
 }
-
-cPrintMemoryMaps printMaps{};
 
 // Counters before/after tests
 struct cStats{
@@ -115,6 +111,7 @@ int test(std::array<T_vector, M_vectors>& testVectors, // Vectors can be given p
 
 using mmapPopulateFull = v_allocator::mmapPopulate<blob, v_allocator::mmapPopulate_base::popFull>;
 using mmapPopulateHalf = v_allocator::mmapPopulate<blob, v_allocator::mmapPopulate_base::popHalf>;
+using mmapPopulateNone = v_allocator::mmapPopulate<blob, v_allocator::mmapPopulate_base::popNone>;
 
 void testVectors()
 {
@@ -176,7 +173,7 @@ void testReservedVectors()
     test(vectors1, logs);
     m.stop();
     printStatesOfVector(logs);
-    printMaps.oneLine();
+    printMaps.multiLine();
 
     // True memory release by swap
     cout << "\n[Real free (swap) of std::vector(s)                    ]";
@@ -242,6 +239,26 @@ void testReservedVectors()
     m.stop();
     //printStatesOfVector(logs);
     realFree(vHmmap_r);
+
+    // MAP_POPULATE none-allocator 
+    cout << "\n[mmapPopulate popNone (for comparsion)                 ]";
+    std::array<std::vector<blob, mmapPopulateNone>, M_vectors> vecNone;
+    m.start();
+    for(auto& v:vecNone) v.reserve(N_pushes);
+    test(vecNone, logs);
+    m.stop();
+    //printStatesOfVector(logs);
+    printMaps.oneLine();
+    realFree(vecNone);
+
+    // MAP_POPULATE half-allocator 
+    cout << "\n[mmapPopulate popNone, excluding reserve()             ]";
+    for(auto& v:vecNone) v.reserve(N_pushes);
+    m.start();
+    test(vecNone, logs);
+    m.stop();
+    //printStatesOfVector(logs);
+    realFree(vecNone);
 }
 
 int main(int argc, char** argv)
