@@ -15,13 +15,11 @@
 #include "memory_maps.h"
 #include "v_allocator.h"
 
-constexpr uintptr_t page_size = 4096;
-
 using std::cout;
 using std::setw;
 using std::to_string;
 
-const int         N_pushes{100000};// # of pushes into vector
+const int         N_pushes{ 10000};// # of pushes into vector
 const std::size_t M_vectors{ 5};  // # of pararell vectors (to slow down process) 
 static_assert(M_vectors > 0);
 struct blob {                      // Block-Of-Bytes to be pushed into vectors
@@ -30,7 +28,7 @@ struct blob {                      // Block-Of-Bytes to be pushed into vectors
 
 cPrintMemoryMaps printMaps{};
 // PFN (Page Frame Number) to string
-pfn2s_t p2s{page_size};
+pfn2s_t p2s{v_allocator::page_size};
 // Logging internal state of vector after push_back
 struct stateOfVector{
     std::size_t size;
