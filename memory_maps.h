@@ -1,6 +1,11 @@
 // Copyright Maciej Polanski
 
 #include <iostream>
+#include <iomanip>
+#include <limits>
+#include <set>
+#include <fstream>
+#include <algorithm>
 
 using std::cout;
 using std::setw;
