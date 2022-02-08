@@ -1,11 +1,18 @@
 $(info ***************         Start here         *************)
-all : a.out test.out
+all : a.out ut_preserving.out ut_chunk.out
 
 a.out: main.cpp v_allocator.h memory_maps.h
 	g++ -g main.cpp ./stackoverflow/proc_statm.c -Wall
 
-test.out: preserving_unit_test.cpp v_allocator.h memory_maps.h
-	g++ -g preserving_unit_test.cpp -o test.out -Wall
+test: ut_preserving.out ut_chunk.out
+	./ut_chunk.out
+	./ut_preserving.out
+
+ut_preserving.out: ut_preserving.cpp v_allocator.h memory_maps.h
+	g++ -g ut_preserving.cpp -o ut_preserving.out -Wall
+
+ut_chunk.out: ut_chunk.cpp v_allocator.h memory_maps.h
+	g++ -g ut_chunk.cpp -o ut_chunk.out -Wall
 
 clean:
 	rm *.out

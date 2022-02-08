@@ -6,6 +6,8 @@
 #include <type_traits>
 #include <cassert>
 #include <limits>
+#include <atomic>
+#include <mutex>
 
 namespace v_allocator {
 
@@ -25,91 +27,103 @@ struct mmapPopulate_base {
 template <typename T, int alloc>
 struct mmapPopulate : public mmapPopulate_base
 {
-  using value_type = T;
+    using value_type = T;
   
-  mmapPopulate() = default;
-  constexpr mmapPopulate(const mmapPopulate<T, alloc>&) noexcept {}
+    mmapPopulate() = default;
+    constexpr mmapPopulate(const mmapPopulate<T, alloc>&) noexcept {}
 
-  // Why I need this to compile for God sake???
-  template<typename T1>
-  struct rebind
-  {
-      using other = mmapPopulate<T1, alloc>;
-  };
+    // Why I need this to compile for God sake???
+    template<typename T1>
+    struct rebind
+    {
+        using other = mmapPopulate<T1, alloc>;
+    };
  
-  // *** Workhorse ***
-  [[nodiscard]] T* allocate(std::size_t n) 
-  {
-    if (n > std::numeric_limits<std::size_t>::max() / sizeof(T))
-      throw std::bad_array_new_length();
-   
-    // Delegating small alloc to stdlib
-    if (n*sizeof(T) < libcTreshold) {
-        return static_cast<T*>(malloc(n*sizeof(T)));
-    }
-    void *pv;
-    if (alloc == popNone) {
-        // No physical frames mapping 
-    	pv = mmap(NULL, n*sizeof(T), PROT_EXEC | PROT_READ | PROT_WRITE, 
-            MAP_ANONYMOUS | MAP_PRIVATE, -1, 0);
-    }
-    else if (alloc == popFull) {
-        // MAP_POPULATE (physical mapping) for whole memory
-    	pv = mmap(NULL, n*sizeof(T), PROT_EXEC | PROT_READ | PROT_WRITE, 
-            MAP_ANONYMOUS | MAP_PRIVATE | MAP_POPULATE, -1, 0);
-    }
-    else {  // alloc == popHalf
-        // MAP_POPULATE (physical mapping) for 1/2 area
-        pv = mmap(NULL, n*sizeof(T), PROT_EXEC | PROT_READ | PROT_WRITE, 
-            MAP_ANONYMOUS | MAP_PRIVATE, -1, 0);
-        if (pv != MAP_FAILED) {
-            pv = mmap(pv, n*sizeof(T)/2, PROT_EXEC | PROT_READ | PROT_WRITE, 
-                MAP_ANONYMOUS | MAP_PRIVATE | MAP_POPULATE | MAP_FIXED, -1, 0);
+    // *** Workhorse ***
+    [[nodiscard]] T* allocate(std::size_t n) 
+    {
+        if (n > std::numeric_limits<std::size_t>::max() / sizeof(T))
+          throw std::bad_array_new_length();
+       
+        // Delegating small alloc to stdlib
+        if (n*sizeof(T) < libcTreshold) {
+            return static_cast<T*>(malloc(n*sizeof(T)));
         }
+        void *pv;
+        if (alloc == popNone) {
+            // No physical frames mapping 
+        	pv = mmap(NULL, n*sizeof(T), PROT_EXEC | PROT_READ | PROT_WRITE, 
+                MAP_ANONYMOUS | MAP_PRIVATE, -1, 0);
+        }
+        else if (alloc == popFull) {
+            // MAP_POPULATE (physical mapping) for whole memory
+        	pv = mmap(NULL, n*sizeof(T), PROT_EXEC | PROT_READ | PROT_WRITE, 
+                MAP_ANONYMOUS | MAP_PRIVATE | MAP_POPULATE, -1, 0);
+        }
+        else {  // alloc == popHalf
+            // MAP_POPULATE (physical mapping) for 1/2 area
+            pv = mmap(NULL, n*sizeof(T), PROT_EXEC | PROT_READ | PROT_WRITE, 
+                MAP_ANONYMOUS | MAP_PRIVATE, -1, 0);
+            if (pv != MAP_FAILED) {
+                pv = mmap(pv, n*sizeof(T)/2, PROT_EXEC | PROT_READ | PROT_WRITE, 
+                    MAP_ANONYMOUS | MAP_PRIVATE | MAP_POPULATE | MAP_FIXED, -1, 0);
+            }
+        }
+        if (pv != MAP_FAILED) {
+          auto p = static_cast<T*>(pv);
+          return p;
+        }
+        //std::cout << "MMAP error: 0x" << std::hex << errno << "\n";
+        // 0x16 - invalid argument
+        perror("mmapPopulate");
+        throw std::bad_alloc();
     }
-    if (pv != MAP_FAILED) {
-      auto p = static_cast<T*>(pv);
-      return p;
-    }
-    //std::cout << "MMAP error: 0x" << std::hex << errno << "\n";
-    // 0x16 - invalid argument
-    perror("mmapPopulate");
-    throw std::bad_alloc();
-  }
  
-  void deallocate(T* p, std::size_t n) noexcept {
-    if (n*sizeof(T) < libcTreshold) {
-        return free(p);
+    void deallocate(T* p, std::size_t n) noexcept {
+        if (n*sizeof(T) < libcTreshold) {
+            return free(p);
+        }
+        munmap(p, n*sizeof(T));
     }
-    munmap(p, n*sizeof(T));
-  }
 };
 
 // Helper struct managing chunks of anonymous, mapped memory
 struct memChunk {
     memChunk* next;
     std::size_t pgSize;
+    memChunk(std::size_t _pgSize) : next(0), pgSize(_pgSize){}
     static std::atomic<memChunk*> head;
 
     static std::size_t mem2pages(std::size_t size) { 
         return (size-1) / page_size + 1;
     }
 
-    static void put(memChunk* chunk) {
-        chunk->next = head.load(std::memory_order_relaxed);
-        while(!head.compare_exchange_weak(chunk->next, chunk,
+    static void put(memChunk* chunk)
+    {
+        memChunk **oldHead = &chunk->next;
+        while (*oldHead) {
+            oldHead = &(*oldHead)->next;
+        };
+        
+        *oldHead = head.load(std::memory_order_relaxed);
+        while (!head.compare_exchange_weak(*oldHead, chunk,
                 std::memory_order_release,
                 std::memory_order_relaxed))
         ;
     }
     
-    static memChunk* get() {
+    static memChunk* get()
+    {
+        //  ABA problem and potential ret->next dereference crash
+        static std::mutex m;
+        std::lock_guard<std::mutex> lock(m);
+
         memChunk* ret = head.load(std::memory_order_relaxed);
-        if (ret != nullptr) {
-            while(!head.compare_exchange_weak(ret, ret->next,
-                    std::memory_order_consume,
-                    std::memory_order_relaxed))
-            ;
+        while(ret && !head.compare_exchange_weak(ret, ret->next,
+                std::memory_order_acquire))
+        ;
+        if (ret) {
+            ret->next = nullptr;
         }
         return ret;
     }
