@@ -1,6 +1,8 @@
 #include <iostream>
 #include <cstring>
 #include <cassert>
+#include <vector>
+#include <thread>
 
 #include "v_allocator.h"
 
@@ -64,17 +66,53 @@ void testSmoke()
     assert(pA->next == pB);
     assert(pB->next == pC);
     assert(pC->next == nullptr);
+
+    while (memChunk::get())
+    ;
  
+}
+
+memChunk pest(1);
+
+void ABA_pest()
+{
+    memChunk *pA, *pB;
+    // Here main must call cmp_ex(A, A->next==B) and be swapped
+    while ((pA = memChunk::get()) && (pB = memChunk::get())) {
+        assert(pA != &pest);
+        assert(pB != &pest);
+        pB->next = &pest;
+        memChunk::put(pA);
+        // Here main may confirm A and set head to B
+        //std::this_thread::sleep_for(std::chrono::milliseconds(10));
+    }
+    cout << " pest_quit ";
 }
 
 void testABA()
 {
-    
+    constexpr std::size_t size = 16 * 1024 * 1024;
+    cout << "ABA test initializaton...\n";
+    std::vector<memChunk> v;
+    v.resize(size, memChunk{1});
+    for (auto &a : v) {
+        memChunk::put(&a);
+    }    
+
+    cout << "Start test...";
+    std::thread th(ABA_pest); 
+    memChunk *pA;
+    while ((pA = memChunk::get())) {
+        assert(pA != &pest);
+    }
+    th.join();
+    cout << "ABA test end\n"; 
 }
 
 int main()
 {
     cout << "UnitTest memChunk, page size is: " << page_size << "\n";
     testSmoke();
-    testABA();
+    //testABA(); uncatchable anyway without intentional chanegs in code
 }
+

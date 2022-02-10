@@ -119,12 +119,11 @@ struct memChunk {
         std::lock_guard<std::mutex> lock(m);
 
         memChunk* ret = head.load(std::memory_order_relaxed);
-        while(ret && !head.compare_exchange_weak(ret, ret->next,
+        while (ret && !head.compare_exchange_weak(ret, ret->next,
                 std::memory_order_acquire))
         ;
-        if (ret) {
+        if (ret)
             ret->next = nullptr;
-        }
         return ret;
     }
 };
