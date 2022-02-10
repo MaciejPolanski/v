@@ -12,6 +12,21 @@ using v_allocator::page_size;
 
 std::atomic<memChunk*> memChunk::head;
 
+void printChunks()
+{
+    v_allocator::memChunk *head = v_allocator::memChunk::head.exchange(0);
+    std::cout << "Chunks: ";
+
+    v_allocator::memChunk *ch = head;
+    while (ch) {
+        std::cout << ch->pgSize << ", ";
+        ch = ch->next;
+    }
+    std::cout << "\n";
+
+    v_allocator::memChunk::put(head);
+}
+
 struct blob {
     char b[v_allocator::libcTreshold];
 };
@@ -24,9 +39,9 @@ void testSmoke()
     memset(&b, 0x0badf00d, sizeof(b));
     memset(&c, 0x0badf00d, sizeof(c));
 
-    memChunk*const pA = new(&a)memChunk(sizeof(a) / page_size);
-    memChunk*const pB = new(&b)memChunk(sizeof(b) / page_size);
-    memChunk*const pC = new(&c)memChunk(sizeof(c) / page_size);
+    memChunk*const pA = new(&a)memChunk(1);
+    memChunk*const pB = new(&b)memChunk(2);
+    memChunk*const pC = new(&c)memChunk(3);
     memChunk *pT;
 
     cout << "Adding one element\n";
@@ -67,9 +82,10 @@ void testSmoke()
     assert(pB->next == pC);
     assert(pC->next == nullptr);
 
+    printChunks();
     while (memChunk::get())
     ;
- 
+    printChunks();
 }
 
 memChunk pest(1);
@@ -113,6 +129,6 @@ int main()
 {
     cout << "UnitTest memChunk, page size is: " << page_size << "\n";
     testSmoke();
-    //testABA(); uncatchable anyway without intentional chanegs in code
+    //testABA(); uncatchable anyway without intentional changes in code, like sleeps added
 }
 

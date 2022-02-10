@@ -100,6 +100,8 @@ struct memChunk {
 
     static void put(memChunk* chunk)
     {
+        if (!chunk)
+            return;
         memChunk **oldHead = &chunk->next;
         while (*oldHead) {
             oldHead = &(*oldHead)->next;

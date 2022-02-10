@@ -85,7 +85,7 @@ class cPrintMemoryMaps {
     void multiLine() {
         cout << "Anonimous mmaps: ";
         walker([](uintptr_t mmStart, uintptr_t mmEnd, std::string s) { 
-            cout << "\n[" << std::hex << addr{mmStart} << " - " << std::hex << addr{mmEnd} << " "; 
+            cout << "\n" << std::hex << addr{mmStart} << " - " << std::hex << addr{mmEnd} << " "; 
             cout << setw(8) << mem2str(mmEnd - mmStart) << s; 
         });
         cout << "\n";
