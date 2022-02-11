@@ -15,7 +15,7 @@ namespace v_allocator {
 constexpr uintptr_t page_size = 4096;
 
 // Size after which stdlib (mostlikely) uses mmap
-const std::size_t libcTreshold = 100 * 1024; 
+const uintptr_t libcTreshold = 100 * 1024; 
 
 // Allocator that forces instant physical mapping (thus zeroing) of memory
 struct mmapPopulate_base {
@@ -88,13 +88,18 @@ struct mmapPopulate : public mmapPopulate_base
 };
 
 // Helper struct managing chunks of anonymous, mapped memory
-struct memChunk {
-    memChunk* next;
-    std::size_t pgSize;
+// enforcing page_size for pointer-to-page arythmetics
+union memChunk {
+    struct {
+       memChunk* next;
+       uintptr_t pgSize;
+    };
+    char buffer[page_size];
+
     memChunk(std::size_t _pgSize) : next(0), pgSize(_pgSize){}
     static std::atomic<memChunk*> head;
 
-    static std::size_t mem2pages(std::size_t size) { 
+    static std::size_t mem2pages(uintptr_t size) { 
         return (size-1) / page_size + 1;
     }
 
@@ -128,7 +133,20 @@ struct memChunk {
             ret->next = nullptr;
         return ret;
     }
+
+    static void release()
+    {
+        memChunk* mc;
+        while ((mc = get())){
+            int ret = munmap(mc, mc->pgSize * page_size);
+            if (ret == -1/*MAP_FAILED*/) {
+                 perror("mmapPreserve");
+                 throw std::bad_alloc();
+            }
+        }
+    }
 };
+static_assert(sizeof(memChunk) == page_size);
 
 // Allocator preserving memory between allocations 
 // This should rather be implemented insid glibc alloc()
@@ -152,7 +170,7 @@ struct mmapPreserve
         if (n > std::numeric_limits<std::size_t>::max() / sizeof(T))
             throw std::bad_array_new_length();
     
-        std::size_t pgNeeded = n ? memChunk::mem2pages(n * sizeof(T)) : 1;
+        uintptr_t pgNeeded = n ? memChunk::mem2pages(n * sizeof(T)) : 1;
     
         memChunk* retVal = memChunk::get();
         // If we need new memory from system
@@ -160,11 +178,10 @@ struct mmapPreserve
             mmapPopulate<T, mmapPopulate_base::popNone> alloc;
             return alloc.allocate(n);
         } 
-        // Chunk too big, need to return tail to the queue
-        assert((std::size_t)retVal % page_size == 0);
+        // Chunk too big, tail will return to the queue
+        assert((uintptr_t)retVal % page_size == 0);
         if (pgNeeded < retVal->pgSize) {
-            memChunk* mc = retVal + pgNeeded * page_size;
-            mc->pgSize = retVal->pgSize - pgNeeded;
+            auto mc = new (retVal + pgNeeded)memChunk(retVal->pgSize - pgNeeded);
             retVal->pgSize = pgNeeded;
             memChunk::put(mc);
         }
@@ -184,27 +201,32 @@ struct mmapPreserve
         // Let's start collecting chunks
         assert(pgNeeded > retVal->pgSize);
         pgNeeded -= retVal->pgSize;
-        memChunk* mc = retVal + retVal->pgSize * page_size;
+        memChunk* mc_next = retVal + retVal->pgSize;
         while (pgNeeded) {
             memChunk* mc1 = memChunk::get();
+            // No more chunks, soft fault will act if needed
+            if (!mc1) {
+                auto p = (T*)retVal;
+                return p;
+            }
             // Chunk too big, return tail to queue
             if (pgNeeded < mc1->pgSize) {
-                memChunk* mc2 = mc1 + pgNeeded * page_size;
-                mc2->pgSize = mc1->pgSize - pgNeeded;
+                auto mc = new (mc1 + pgNeeded) memChunk(mc1->pgSize - pgNeeded);
                 mc1->pgSize = pgNeeded;
-                memChunk::put(mc2);
+                memChunk::put(mc);
             }
-            // Smaller or equal, just attach at the end
+            // Smaller or equal(maybe after trimming), just attach at the end
             void* pv = mremap(mc1, mc1->pgSize * page_size, mc1->pgSize * page_size, 
-                MREMAP_MAYMOVE | MREMAP_FIXED, mc);
+                MREMAP_MAYMOVE | MREMAP_FIXED, mc_next);
             mc1 = static_cast<memChunk*>(pv);
             if (pv == MAP_FAILED) {
                 perror("mmapPreserve");
                 throw std::bad_alloc();
             }
+            assert(mc1 == mc_next);
             assert(pgNeeded >= mc1->pgSize);
             pgNeeded -= mc1->pgSize; 
-            mc = mc1 + mc1->pgSize * page_size;
+            mc_next = mc1 + mc1->pgSize;
         }
         auto p =(T*)retVal;
         return p;
@@ -212,8 +234,7 @@ struct mmapPreserve
  
     void deallocate(T* p, std::size_t n) noexcept 
     {
-        memChunk* mc = (memChunk*)p;
-        mc->pgSize = n ? memChunk::mem2pages(n * sizeof(T)) : 1;
+        memChunk* mc = new (p)memChunk(n ? memChunk::mem2pages(n * sizeof(T)) : 1);
         memChunk::put(mc);
         //munmap(p, pages * page_size);
     }
