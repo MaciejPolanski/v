@@ -83,10 +83,17 @@ class cPrintMemoryMaps {
     public:
     // Print multi-lines
     void multiLine() {
+        uintptr_t old = 0;
         cout << "Anonimous mmaps: ";
-        walker([](uintptr_t mmStart, uintptr_t mmEnd, std::string s) { 
+
+        walker([&old](uintptr_t mmStart, uintptr_t mmEnd, std::string s) 
+        { 
+            if (old && mmStart != old) {
+                cout << " free2next: "<< mem2str(mmStart -old);
+            }
             cout << "\n" << std::hex << addr{mmStart} << " - " << std::hex << addr{mmEnd} << " "; 
             cout << setw(8) << mem2str(mmEnd - mmStart) << s; 
+            old = mmEnd; 
         });
         cout << "\n";
     }
@@ -100,14 +107,14 @@ class cPrintMemoryMaps {
     // Collects memory adresses to not be listed later
     void init() {
         dontshow.clear();
-        //cout << "Skipping mmaps: ";
+        // cout << "Skipping mmaps: ";
         walker([&](uintptr_t mmStart, uintptr_t mmEnd, std::string s){
             // Keep heap, sometimes vectors fits there
             if (s != "[heap]")
                 dontshow.insert(mmStart);
             //cout << addr{mmStart} << " ";
         });
-        //cout << "\n";
+        // cout << "\n";
     }
 };
 

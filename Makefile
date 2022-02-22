@@ -9,7 +9,7 @@ test: ut_preserving.out ut_chunk.out
 	./ut_preserving.out
 
 ut_preserving.out: ut_preserving.cpp v_allocator.h memory_maps.h
-	g++ -g ut_preserving.cpp -o ut_preserving.out -Wall
+	g++ -g ut_preserving.cpp -o ut_preserving.out -pthread -Wall
 
 ut_chunk.out: ut_chunk.cpp v_allocator.h memory_maps.h
 	g++ -g ut_chunk.cpp -o ut_chunk.out -pthread -Wall

@@ -1,5 +1,9 @@
 #include <vector>
 #include <iostream>
+#include <array>
+#include <thread>
+#include <cstring>
+#include <condition_variable>
 
 #include "memory_maps.h"
 #include "v_allocator.h"
@@ -12,27 +16,31 @@ std::atomic<v_allocator::memChunk*> v_allocator::memChunk::head;
 cPrintMemoryMaps printMaps{};
 pfn2s_t p2s(page_size);
 
-void printChunks()
-{
-    v_allocator::memChunk *head = v_allocator::memChunk::head.exchange(0);
-    std::cout << "Chunks: \n";
-
-    v_allocator::memChunk *ch = head;
-    while (ch) {
-        std::cout << addr{ch} << " " << p2s(ch->pgSize) << "\n";
-        ch = ch->next;
-    }
-    std::cout << "\n";
-
-    v_allocator::memChunk::put(head);
-}
-
 std::size_t tstIndex = 1024;
 const char tstMark = 42;
 
 struct blob {
     char buf[v_allocator::libcTreshold];
 };
+
+void printChunks()
+{
+    int nTotal = 0;
+    int pgTotal = 0;
+    v_allocator::memChunk *head = v_allocator::memChunk::head.exchange(0);
+    std::cout << "Chunks: \n";
+
+    v_allocator::memChunk *ch = head;
+    while (ch) {
+        std::cout << addr{ch} << " " << p2s(ch->pgSize) << "\n";
+        ++nTotal;
+        pgTotal += ch->pgSize;
+        ch = ch->next;
+    }
+    std::cout << "Total " << nTotal << " chunks, " << p2s(pgTotal) << "\n";
+    std::cout << "\n";
+    v_allocator::memChunk::put(head);
+}
 
 void testSmoke()
 {
@@ -180,7 +188,7 @@ void testCheckerboard()
     printChunks();
  
     cout << "*** Allocation of 5x" << mem2str(2 * sizeof(blob)) << " ***\n";
-    cout << "Expected old mmaps full of "<< mem2str(sizeof(blob)) << " holes, new in isles, same total amount\n";
+    cout << "Expected old mmaps full of "<< mem2str(sizeof(blob)) << " holes, new in isle(s), same total amount\n";
     for (int i = 0; i < 5; ++i) {
         va.emplace_back(a.allocate(2));
         //assert((*va.rbegin())->buf[tstIndex] == tstMark);
@@ -188,11 +196,114 @@ void testCheckerboard()
     }
     printMaps.multiLine();
     printChunks();
-    
+
+    cout << "*** Releasing chunks ***\n";
+    cout << "Chunks and mmaps should dissapear\n";
     for (auto& x : va) {
         a.deallocate(x, 2);
     }
- 
+    for (auto& x : vb) {
+        a.deallocate(x, 1);
+    }
+    v_allocator::memChunk::release();
+    printMaps.multiLine();
+    printChunks();
+}
+
+constexpr int nThreads = 5;
+constexpr int n = 10;
+std::atomic<int> aStart{0};
+std::atomic<int> aDealloc{0};
+std::atomic<int> aAlloc{0};
+std::atomic<int> aEnd{0};
+//std::condition_variable cvStart;
+
+void testThread(std::array<blob*, n>& aBlobs, int i)
+{
+    v_allocator::mmapPreserve<blob> a;
+    // Allocation
+    ++aStart;
+    while(aStart.load() != nThreads + 1);
+    for (auto& x : aBlobs) {
+        x  = a.allocate(1);
+        memset(x, i, sizeof(blob));
+    }
+    // Deallocation every second
+    ++aDealloc;
+    while(aDealloc.load() != nThreads + 1);
+    for (int x = 1; x < n; x += 2) {
+        a.deallocate(aBlobs[x], 1);
+    }
+
+    // Allocation double in size, but half in number
+    ++aAlloc;
+    while(aAlloc.load() != nThreads + 1);
+    for (int x = 1; x < n / 2; x += 2) {
+        aBlobs[x] = a.allocate(2);
+        memset(aBlobs[x], 10 * i, 2 * sizeof(blob));
+    }
+
+    ++aEnd;
+    while(aEnd.load() != nThreads + 1);
+}
+
+void testThreads()
+{
+
+    v_allocator::mmapPreserve<blob> a;
+    
+    std::array<std::array<blob*,n>, nThreads> allBlobs{};
+    std::array<std::thread, nThreads> threads;
+
+    cout << "\n+---      Chessboard threads test      ---+\n";
+    printMaps.multiLine();
+    cout << "\n";
+
+    cout << "*** Allocation, threads: " << nThreads << " each alloc: " << n;
+    cout << " blocks of size: " << mem2str(sizeof(blob)) << " ***\n";
+    cout << "Expected mmaps in big isle(s)\n";
+
+    for (int x = 0; x < nThreads; ++x) {
+        threads[x] =  std::thread(testThread, std::ref(allBlobs[x]), x);
+    }
+    while(aStart.load() != nThreads);    // Sync all threads
+    printMaps.init();                    // To hide threads stacks
+    ++aStart;                            // Start allocations
+    while(aDealloc.load() != nThreads);  // Wait for finish
+    printMaps.multiLine();
+    printChunks();
+
+    cout << "*** Deallocation every second, threaded " << "\n";
+    cout << "Expected mmaps as previously, but " << n / 2 * nThreads << " chunks avaliable\n";
+    ++aDealloc;                          // Start Deallocations
+    while(aAlloc.load() != nThreads);    // Wait for finish
+    printMaps.multiLine();
+    printChunks();
+
+    cout << "*** Allocation of " << (n / 4 * nThreads) << " double sized blocks, threaded\n";
+    cout << "Expected prevoius mmaps with holes, new isle(s), " << (n / 2) % 2 * nThreads << " chunks avaliable\n";
+    ++aAlloc;                            // Start double allocations
+    while(aEnd.load() != nThreads);      // Wait for finish
+    printMaps.multiLine();
+    printChunks();
+    // Joining pollutes mmaps
+    aEnd++;
+    for (auto& x : threads)
+        x.join(); 
+
+    cout << "*** Releasing chunks ***\n";
+    cout << "Chunks and mmaps should dissapear, but threads storages may appear\n";
+    for (auto& b : allBlobs) 
+        for (int x =0; x < n; ++x)
+    {
+        if (x%2 == 0)
+            a.deallocate(b[x], 1);
+        else if (x < n / 2)
+            a.deallocate(b[x], 2);
+    }
+    v_allocator::memChunk::release();
+    printMaps.multiLine();
+    printChunks();
 }
 
 int main()
@@ -204,4 +315,7 @@ int main()
     testSmoke();
     testGrowmap();
     testCheckerboard();
+    testThreads();
+    cout << "+---        End, memory status      ---+\n";
+    printMaps.multiLine();
 }
