@@ -1,3 +1,4 @@
+#include <vector>
 #include <iostream>
 
 #include "memory_maps.h"
@@ -30,7 +31,7 @@ std::size_t tstIndex = 1024;
 const char tstMark = 42;
 
 struct blob {
-    char b[v_allocator::libcTreshold];
+    char buf[v_allocator::libcTreshold];
 };
 
 void testSmoke()
@@ -150,6 +151,50 @@ void testGrowmap()
     printChunks();
 }
 
+void testCheckerboard()
+{
+    v_allocator::mmapPreserve<blob> a;
+    std::vector<blob*> va,vb;
+
+    cout << "\n+--- Chessboard tests ---+\n";
+    printMaps.multiLine();
+    cout << "\n";
+
+    cout << "*** Allocation of 20x" << mem2str(sizeof(blob)) << ", releasing every second ***\n";
+    cout << "Expected mmaps in big isles, 10 free chunks \n";
+    for (int i = 0; i < 20; ++i) {
+        if (i%2 == 0) {
+            va.emplace_back(a.allocate(1));
+            (*va.rbegin())->buf[tstIndex] = tstMark;
+        }
+        else {
+            vb.emplace_back(a.allocate(1));
+            (*vb.rbegin())->buf[tstIndex] = tstMark + 1;
+        }
+    }
+    for (auto& x : va) {
+        a.deallocate(x, 1);
+    }
+    va.clear();
+    printMaps.multiLine();
+    printChunks();
+ 
+    cout << "*** Allocation of 5x" << mem2str(2 * sizeof(blob)) << " ***\n";
+    cout << "Expected old mmaps full of "<< mem2str(sizeof(blob)) << " holes, new in isles, same total amount\n";
+    for (int i = 0; i < 5; ++i) {
+        va.emplace_back(a.allocate(2));
+        //assert((*va.rbegin())->buf[tstIndex] == tstMark);
+        //assert((*va.rbegin())->buf[tstIndex] + sizeof(blob) == tstMark);
+    }
+    printMaps.multiLine();
+    printChunks();
+    
+    for (auto& x : va) {
+        a.deallocate(x, 2);
+    }
+ 
+}
+
 int main()
 {
     printMaps.init();
@@ -158,4 +203,5 @@ int main()
     cout << " Blob size: "<< mem2str(sizeof(blob)) << "\n";
     testSmoke();
     testGrowmap();
+    testCheckerboard();
 }

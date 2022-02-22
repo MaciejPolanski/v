@@ -175,13 +175,18 @@ struct mmapPreserve
         memChunk* retVal = memChunk::get();
         // If we need new memory from system
         if (retVal == nullptr) {
-            mmapPopulate<T, mmapPopulate_base::popNone> alloc;
-            return alloc.allocate(n);
-        } 
-        // Chunk too big, tail will return to the queue
+            void* pv = mmap(NULL, pgNeeded * page_size, PROT_EXEC | PROT_READ | PROT_WRITE, 
+                    MAP_ANONYMOUS | MAP_PRIVATE, -1, 0);
+            if (pv == MAP_FAILED) {
+                 throw std::bad_alloc();
+            }
+            auto p = static_cast<T*>(pv);
+            return p;
+        }
+        // Chunk too big, cut tail and return to the queue
         assert((uintptr_t)retVal % page_size == 0);
         if (pgNeeded < retVal->pgSize) {
-            auto mc = new (retVal + pgNeeded)memChunk(retVal->pgSize - pgNeeded);
+            auto mc = new (retVal + pgNeeded) memChunk (retVal->pgSize - pgNeeded);
             retVal->pgSize = pgNeeded;
             memChunk::put(mc);
         }
@@ -228,13 +233,13 @@ struct mmapPreserve
             pgNeeded -= mc1->pgSize; 
             mc_next = mc1 + mc1->pgSize;
         }
-        auto p =(T*)retVal;
+        auto p = (T*)retVal;
         return p;
     }
  
     void deallocate(T* p, std::size_t n) noexcept 
     {
-        memChunk* mc = new (p)memChunk(n ? memChunk::mem2pages(n * sizeof(T)) : 1);
+        memChunk* mc = new (p) memChunk(n ? memChunk::mem2pages(n * sizeof(T)) : 1);
         memChunk::put(mc);
         //munmap(p, pages * page_size);
     }
