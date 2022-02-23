@@ -1,5 +1,4 @@
 // Copyright Maciej Polanski
-
 #include <iostream>
 #include <array>
 #include <vector>
@@ -13,7 +12,7 @@
 
 #include "stackoverflow/proc_statm.h"
 #include "memory_maps.h"
-#include "v_allocator.h"
+#include "mm_alloc.h"
 
 using std::cout;
 using std::setw;
@@ -28,7 +27,7 @@ struct blob {                      // Block-Of-Bytes to be pushed into vectors
 
 cPrintMemoryMaps printMaps{};
 // PFN (Page Frame Number) to string
-pfn2s_t p2s{v_allocator::page_size};
+pfn2s_t p2s{mm::page_size};
 // Logging internal state of vector after push_back
 struct stateOfVector{
     std::size_t size;
@@ -107,9 +106,9 @@ int test(std::array<T_vector, M_vectors>& testVectors, // Vectors can be given p
     return 1;
 }
 
-using mmapPopulateFull = v_allocator::mmapPopulate<blob, v_allocator::mmapPopulate_base::popFull>;
-using mmapPopulateHalf = v_allocator::mmapPopulate<blob, v_allocator::mmapPopulate_base::popHalf>;
-using mmapPopulateNone = v_allocator::mmapPopulate<blob, v_allocator::mmapPopulate_base::popNone>;
+using mmapPopulateFull = mm::allocPopulate<blob, mm::allocPopulate_base::popFull>;
+using mmapPopulateHalf = mm::allocPopulate<blob, mm::allocPopulate_base::popHalf>;
+using mmapPopulateNone = mm::allocPopulate<blob, mm::allocPopulate_base::popNone>;
 
 void testVectors()
 {

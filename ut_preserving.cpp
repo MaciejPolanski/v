@@ -6,12 +6,12 @@
 #include <condition_variable>
 
 #include "memory_maps.h"
-#include "v_allocator.h"
+#include "mm_alloc.h"
 
 using std::cout;
-using v_allocator::page_size;
-using v_allocator::memChunk;
-std::atomic<v_allocator::memChunk*> v_allocator::memChunk::head;
+using mm::page_size;
+using mm::memChunk;
+std::atomic<mm::memChunk*> mm::memChunk::head;
 
 cPrintMemoryMaps printMaps{};
 pfn2s_t p2s(page_size);
@@ -20,17 +20,17 @@ std::size_t tstIndex = 1024;
 const char tstMark = 42;
 
 struct blob {
-    char buf[v_allocator::libcTreshold];
+    char buf[mm::libcTreshold];
 };
 
 void printChunks()
 {
     int nTotal = 0;
     int pgTotal = 0;
-    v_allocator::memChunk *head = v_allocator::memChunk::head.exchange(0);
+    mm::memChunk *head = mm::memChunk::head.exchange(0);
     std::cout << "Chunks: \n";
 
-    v_allocator::memChunk *ch = head;
+    mm::memChunk *ch = head;
     while (ch) {
         std::cout << addr{ch} << " " << p2s(ch->pgSize) << "\n";
         ++nTotal;
@@ -39,12 +39,12 @@ void printChunks()
     }
     std::cout << "Total " << nTotal << " chunks, " << p2s(pgTotal) << "\n";
     std::cout << "\n";
-    v_allocator::memChunk::put(head);
+    mm::memChunk::put(head);
 }
 
 void testSmoke()
 {
-    v_allocator::mmapPreserve<struct blob> a;
+    mm::allocPreserve<struct blob> a;
     cout << "\n+--- Basic allocations tests ---+\n";
     printMaps.multiLine();
     cout << "\n";
@@ -84,7 +84,7 @@ void testSmoke()
     
     cout << "*** Releasing chunks ***\n";
     cout << "Chunks and mmaps should dissapear\n";
-    v_allocator::memChunk::release();
+    mm::memChunk::release();
     printMaps.multiLine();
     printChunks();
 }
@@ -92,7 +92,7 @@ void testSmoke()
 void testGrowmap()
 {
     blob* pBlob;
-    v_allocator::mmapPreserve<struct blob> a;
+    mm::allocPreserve<struct blob> a;
 
     cout << "\n+--- Reallocation tests ---+\n";
     printMaps.multiLine();
@@ -154,14 +154,14 @@ void testGrowmap()
 
     cout << "*** Releasing chunks ***\n";
     cout << "Chunks and mmaps should dissapear\n";
-    v_allocator::memChunk::release();
+    mm::memChunk::release();
     printMaps.multiLine();
     printChunks();
 }
 
 void testCheckerboard()
 {
-    v_allocator::mmapPreserve<blob> a;
+    mm::allocPreserve<blob> a;
     std::vector<blob*> va,vb;
 
     cout << "\n+--- Chessboard tests ---+\n";
@@ -205,13 +205,13 @@ void testCheckerboard()
     for (auto& x : vb) {
         a.deallocate(x, 1);
     }
-    v_allocator::memChunk::release();
+    mm::memChunk::release();
     printMaps.multiLine();
     printChunks();
 }
 
 constexpr int nThreads = 5;
-constexpr int n = 10;
+constexpr int n = 15;
 std::atomic<int> aStart{0};
 std::atomic<int> aDealloc{0};
 std::atomic<int> aAlloc{0};
@@ -220,7 +220,7 @@ std::atomic<int> aEnd{0};
 
 void testThread(std::array<blob*, n>& aBlobs, int i)
 {
-    v_allocator::mmapPreserve<blob> a;
+    mm::allocPreserve<blob> a;
     // Allocation
     ++aStart;
     while(aStart.load() != nThreads + 1);
@@ -250,7 +250,7 @@ void testThread(std::array<blob*, n>& aBlobs, int i)
 void testThreads()
 {
 
-    v_allocator::mmapPreserve<blob> a;
+    mm::allocPreserve<blob> a;
     
     std::array<std::array<blob*,n>, nThreads> allBlobs{};
     std::array<std::thread, nThreads> threads;
@@ -296,12 +296,12 @@ void testThreads()
     for (auto& b : allBlobs) 
         for (int x =0; x < n; ++x)
     {
-        if (x%2 == 0)
+        if (x % 2 == 0)
             a.deallocate(b[x], 1);
         else if (x < n / 2)
             a.deallocate(b[x], 2);
     }
-    v_allocator::memChunk::release();
+    mm::memChunk::release();
     printMaps.multiLine();
     printChunks();
 }
@@ -309,8 +309,8 @@ void testThreads()
 int main()
 {
     printMaps.init();
-    cout << "Unit test, manual, for v_allocator::preserving\n";
-    cout << "Page size is: " << v_allocator::page_size;
+    cout << "Unit test, manual, for mm::allocPreserving\n";
+    cout << "Page size is: " << mm::page_size;
     cout << " Blob size: "<< mem2str(sizeof(blob)) << "\n";
     testSmoke();
     testGrowmap();

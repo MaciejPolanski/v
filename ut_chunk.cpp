@@ -4,31 +4,31 @@
 #include <vector>
 #include <thread>
 
-#include "v_allocator.h"
+#include "mm_alloc.h"
 
 using std::cout;
-using v_allocator::memChunk;
-using v_allocator::page_size;
+using mm::memChunk;
+using mm::page_size;
 
 std::atomic<memChunk*> memChunk::head;
 
 void printChunks()
 {
-    v_allocator::memChunk *head = v_allocator::memChunk::head.exchange(0);
+    mm::memChunk *head = mm::memChunk::head.exchange(0);
     std::cout << "Chunks: ";
 
-    v_allocator::memChunk *ch = head;
+    mm::memChunk *ch = head;
     while (ch) {
         std::cout << ch->pgSize << ", ";
         ch = ch->next;
     }
     std::cout << "\n";
 
-    v_allocator::memChunk::put(head);
+    mm::memChunk::put(head);
 }
 
 struct blob {
-    char b[v_allocator::libcTreshold];
+    char b[mm::libcTreshold];
 };
 
 

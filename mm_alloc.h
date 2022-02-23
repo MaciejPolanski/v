@@ -9,7 +9,7 @@
 #include <atomic>
 #include <mutex>
 
-namespace v_allocator {
+namespace mm {
 
 // $ getconf PAGESIZE
 constexpr uintptr_t page_size = 4096;
@@ -18,25 +18,25 @@ constexpr uintptr_t page_size = 4096;
 const uintptr_t libcTreshold = 100 * 1024; 
 
 // Allocator that forces instant physical mapping (thus zeroing) of memory
-struct mmapPopulate_base {
+struct allocPopulate_base {
     static constexpr int popNone = 0x00;
     static constexpr int popFull = 0x01;
     static constexpr int popHalf = 0x02;
 };
 
 template <typename T, int alloc>
-struct mmapPopulate : public mmapPopulate_base
+struct allocPopulate : public allocPopulate_base
 {
     using value_type = T;
   
-    mmapPopulate() = default;
-    constexpr mmapPopulate(const mmapPopulate<T, alloc>&) noexcept {}
+    allocPopulate() = default;
+    constexpr allocPopulate(const allocPopulate<T, alloc>&) noexcept {}
 
     // Why I need this to compile for God sake???
     template<typename T1>
     struct rebind
     {
-        using other = mmapPopulate<T1, alloc>;
+        using other = allocPopulate<T1, alloc>;
     };
  
     // *** Workhorse ***
@@ -152,17 +152,17 @@ static_assert(sizeof(memChunk) == page_size);
 // This should rather be implemented insid glibc alloc()
 
 template <class T>
-struct mmapPreserve
+struct allocPreserve
 {
     typedef T value_type;
    
-    mmapPreserve() = default;
-    template <class U> constexpr mmapPreserve(const mmapPreserve<U>&) noexcept {}
+    allocPreserve() = default;
+    template <class U> constexpr allocPreserve(const allocPreserve<U>&) noexcept {}
    
     template<typename T1>
     struct rebind
     {
-        using other = mmapPreserve<T1>;
+        using other = allocPreserve<T1>;
     };
   
     [[nodiscard]] T* allocate(std::size_t n) 
@@ -245,4 +245,4 @@ struct mmapPreserve
     }
 };
 
-} // namespace v_allocator
+} // namespace mm
