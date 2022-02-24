@@ -127,7 +127,7 @@ void testABA()
 
 int main()
 {
-    cout << "UnitTest memChunk, page size is: " << page_size << "\n";
+    cout << "\033[1;33mUnitTest memChunk, page size is: " << page_size << "\033[0m\n";
     testSmoke();
     //testABA(); uncatchable anyway without intentional changes in code, like sleeps added
 }

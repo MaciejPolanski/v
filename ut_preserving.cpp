@@ -45,7 +45,7 @@ void printChunks()
 void testSmoke()
 {
     mm::allocPreserve<struct blob> a;
-    cout << "\n+--- Basic allocations tests ---+\n";
+    cout << "\n\033[1;33m+--- Basic allocations tests ---+\033[0m\n";
     printMaps.multiLine();
     cout << "\n";
 
@@ -94,7 +94,7 @@ void testGrowmap()
     blob* pBlob;
     mm::allocPreserve<struct blob> a;
 
-    cout << "\n+--- Reallocation tests ---+\n";
+    cout << "\n\033[1;33m+--- Reallocation tests ---+\033[0m\n";
     printMaps.multiLine();
     cout << "\n";
 
@@ -164,7 +164,7 @@ void testCheckerboard()
     mm::allocPreserve<blob> a;
     std::vector<blob*> va,vb;
 
-    cout << "\n+--- Chessboard tests ---+\n";
+    cout << "\n\033[1;33m+--- Chessboard tests ---+\033[0m\n";
     printMaps.multiLine();
     cout << "\n";
 
@@ -255,7 +255,7 @@ void testThreads()
     std::array<std::array<blob*,n>, nThreads> allBlobs{};
     std::array<std::thread, nThreads> threads;
 
-    cout << "\n+---      Chessboard threads test      ---+\n";
+    cout << "\033[1;33m\n+---      Chessboard threads test      ---+\033[0m\n";
     printMaps.multiLine();
     cout << "\n";
 
@@ -316,6 +316,6 @@ int main()
     testGrowmap();
     testCheckerboard();
     testThreads();
-    cout << "+---        End, memory status      ---+\n";
+    cout << "\033[1;33m+---        End, memory status      ---+\033[0m\n";
     printMaps.multiLine();
 }

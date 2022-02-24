@@ -19,11 +19,15 @@ using std::setw;
 using std::to_string;
 
 const int         N_pushes{ 10000};// # of pushes into vector
-const std::size_t M_vectors{ 5};  // # of pararell vectors (to slow down process) 
+const std::size_t M_vectors{ 20};  // # of pararell vectors (to slow down process) 
 static_assert(M_vectors > 0);
 struct blob {                      // Block-Of-Bytes to be pushed into vectors
-    unsigned char blob[1024];
+    unsigned char blob[10 * 1024];
 };
+
+const char* NC = "\033[0m";
+const char* MT = "\033[1;33m";
+const char* ST = "\033[0;33m";
 
 cPrintMemoryMaps printMaps{};
 // PFN (Page Frame Number) to string
@@ -116,8 +120,10 @@ void testVectors()
     tStatesOfVector logs;
     std::array<std::vector<blob>, M_vectors> vectors1;
 
+    cout << MT << "\n[+---------------------- Non reserved vectors    ---------------+]" << NC;
+
     // Absoulutely standard use of vector   
-    cout << "\n[Pushing one-by-one into std::vector(s)                ]";
+    cout << ST << "\n[Pushing one-by-one into std::vector(s)                ]" << NC;
     m.start();
     test(vectors1, logs);
     m.stop();
@@ -125,7 +131,7 @@ void testVectors()
     printMaps.oneLine();
 
     // Reused clear() vectors
-    cout << "\n[Reusing into std::vector cleared with clear()         ]";
+    cout << ST << "\n[Reusing into std::vector cleared with clear()         ]" << NC;
     for(auto& v: vectors1) v.clear();
     m.start();
     test(vectors1, logs);
@@ -134,7 +140,7 @@ void testVectors()
     printMaps.oneLine();
 
     // MAP_POPULATE allocator
-    cout << "\n[Pushing into vector with mmap MAP_POPULATE            ]";
+    cout << ST << "\n[Pushing into vector with mmap MAP_POPULATE            ]" << NC;
     std::array<std::vector<blob, mmapPopulateFull>, M_vectors> vmmap;
     m.start();
     test(vmmap, logs);
@@ -146,7 +152,7 @@ void testVectors()
     printMaps.oneLine();
     
     // MAP_POPULATE half allocator
-    cout << "\n[Pushing into vector with mmap 1/2 MAP_POPULATE        ]";
+    cout << ST << "\n[Pushing into vector with mmap 1/2 MAP_POPULATE        ]" << NC;
     std::array<std::vector<blob, mmapPopulateHalf>, M_vectors> vHalfMmap;
     m.start();
     test(vHalfMmap, logs);
@@ -160,10 +166,10 @@ void testReservedVectors()
     cStats m;
     tStatesOfVector logs;
 
-    cout << "\n[+---------------------- reserved vectors ----------------------+]";
+    cout << MT << "\n[+---------------------- reserved vectors ----------------------+]" << NC;
 
     // Reserved vectors
-    cout << "\n[New, reserved std::vector                             ]";
+    cout << ST << "\n[New, reserved std::vector                             ]" << NC;
     std::array<std::vector<blob>, M_vectors> vectors1;
     for(auto& v: vectors1) v.reserve(N_pushes);
     m.start();
@@ -173,13 +179,13 @@ void testReservedVectors()
     printMaps.multiLine();
 
     // True memory release by swap
-    cout << "\n[Real free (swap) of std::vector(s)                    ]";
+    cout << "\n[Real free (swap) of std::vector(s)                    ]" << NC;
     m.start();
     realFree(vectors1);
     m.stop();
     //printMaps.multiLine();
 
-    cout << "\n[Again reserved vector (not faster -> no mem reuse)    ]";
+    cout << ST << "\n[Again reserved vector (not faster -> no mem reuse)    ]" << NC;
     m.start();
     for(auto& v: vectors1) v.reserve(N_pushes);
     test(vectors1, logs);
@@ -188,7 +194,7 @@ void testReservedVectors()
     printMaps.oneLine();
     realFree(vectors1);
 
-    cout << "\n[Time excluding reserve() (proof reserve does nothing) ]";
+    cout << ST << "\n[Time excluding reserve() (proof reserve does nothing) ]" << NC;
     for(auto& v: vectors1) v.reserve(N_pushes);
     m.start();
     test(vectors1, logs);
@@ -198,7 +204,7 @@ void testReservedVectors()
     realFree(vectors1);
 
      // MAP_POPULATE allocator 
-    cout << "\n[MAP_POPULATE, mmap allocator                          ]";
+    cout << ST << "\n[MAP_POPULATE, mmap allocator                          ]" << NC;
     std::array<std::vector<blob, mmapPopulateFull>, M_vectors> vmmap_r;
     m.start();
     for(auto& v:vmmap_r) v.reserve(N_pushes);
@@ -209,7 +215,7 @@ void testReservedVectors()
     realFree(vmmap_r);
 
     // MAP_POPULATE allocator, count only inserting
-    cout << "\n[MAP_POPULATE, excluding reserve() time                ]";
+    cout << ST << "\n[MAP_POPULATE, excluding reserve() time                ]" << NC;
     for(auto& v:vmmap_r) v.reserve(N_pushes);
     m.start();
     test(vmmap_r, logs);
@@ -218,7 +224,7 @@ void testReservedVectors()
     realFree(vmmap_r);
     
     // MAP_POPULATE half-allocator 
-    cout << "\n[1/2 MAP_POPULATE, mmap allocator                      ]";
+    cout << ST << "\n[1/2 MAP_POPULATE, mmap allocator                      ]" << NC;
     std::array<std::vector<blob, mmapPopulateHalf>, M_vectors> vHmmap_r;
     m.start();
     for(auto& v:vHmmap_r) v.reserve(N_pushes);
@@ -229,7 +235,7 @@ void testReservedVectors()
     realFree(vHmmap_r);
 
     // MAP_POPULATE half-allocator 
-    cout << "\n[1/2 MAP_POPULATE, excluding reserve() time            ]";
+    cout << ST << "\n[1/2 MAP_POPULATE, excluding reserve() time            ]" << NC;
     for(auto& v:vHmmap_r) v.reserve(N_pushes);
     m.start();
     test(vHmmap_r, logs);
@@ -238,7 +244,7 @@ void testReservedVectors()
     realFree(vHmmap_r);
 
     // MAP_POPULATE none-allocator 
-    cout << "\n[mmapPopulate popNone (for comparsion)                 ]";
+    cout << ST << "\n[mmapPopulate popNone (for comparsion)                 ]" << NC;
     std::array<std::vector<blob, mmapPopulateNone>, M_vectors> vecNone;
     m.start();
     for(auto& v:vecNone) v.reserve(N_pushes);
@@ -249,7 +255,7 @@ void testReservedVectors()
     realFree(vecNone);
 
     // MAP_POPULATE half-allocator 
-    cout << "\n[mmapPopulate popNone, excluding reserve()             ]";
+    cout << "\n[mmapPopulate popNone, excluding reserve()             ]" << NC;
     for(auto& v:vecNone) v.reserve(N_pushes);
     m.start();
     test(vecNone, logs);
