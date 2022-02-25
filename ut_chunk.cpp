@@ -28,7 +28,7 @@ void printChunks()
 }
 
 struct blob {
-    char b[mm::libcTreshold];
+    char b[mm::libcThreshold];
 };
 
 

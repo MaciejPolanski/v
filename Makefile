@@ -1,7 +1,10 @@
 $(info ***************         Start here         *************)
-all : a.out ut_preserving.out ut_chunk.out
+default : main.out
+	./main.out
 
-a.out: main.cpp mm_alloc.h memory_maps.h
+all : main.out ut_preserving.out ut_chunk.out
+
+main.out: main.cpp mm_alloc.h memory_maps.h
 	g++ -g main.cpp ./stackoverflow/proc_statm.c -o main.out -Wall
 
 test: ut_preserving.out ut_chunk.out

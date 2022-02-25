@@ -15,7 +15,7 @@ namespace mm {
 constexpr uintptr_t page_size = 4096;
 
 // Size after which stdlib (mostlikely) uses mmap
-const uintptr_t libcTreshold = 100 * 1024; 
+const uintptr_t libcThreshold = 128 * 1024; 
 
 // Allocator that forces instant physical mapping (thus zeroing) of memory
 struct allocPopulate_base {
@@ -46,7 +46,7 @@ struct allocPopulate : public allocPopulate_base
           throw std::bad_array_new_length();
        
         // Delegating small alloc to stdlib
-        if (n*sizeof(T) < libcTreshold) {
+        if (n*sizeof(T) < libcThreshold) {
             return static_cast<T*>(malloc(n*sizeof(T)));
         }
         void *pv;
@@ -80,7 +80,7 @@ struct allocPopulate : public allocPopulate_base
     }
  
     void deallocate(T* p, std::size_t n) noexcept {
-        if (n*sizeof(T) < libcTreshold) {
+        if (n*sizeof(T) < libcThreshold) {
             return free(p);
         }
         munmap(p, n*sizeof(T));

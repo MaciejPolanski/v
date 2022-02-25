@@ -20,7 +20,7 @@ std::size_t tstIndex = 1024;
 const char tstMark = 42;
 
 struct blob {
-    char buf[mm::libcTreshold];
+    char buf[mm::libcThreshold];
 };
 
 void printChunks()
