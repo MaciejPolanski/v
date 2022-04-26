@@ -11,6 +11,8 @@
 
 namespace mm {
 
+constexpr bool logall = true;
+
 // $ getconf PAGESIZE
 constexpr uintptr_t page_size = 4096;
 
@@ -94,9 +96,12 @@ union memChunk {
        memChunk* next;
        uintptr_t pgSize;
     };
+    // buffer forces pointer incrementation to be in whole pages
     char buffer[page_size];
 
     memChunk(std::size_t _pgSize) : next(0), pgSize(_pgSize){}
+
+    // Static part
     static std::atomic<memChunk*> head;
 
     static std::size_t mem2pages(uintptr_t size) { 
@@ -164,6 +169,35 @@ struct allocPreserve
     {
         using other = allocPreserve<T1>;
     };
+
+    void* mm_alloc(size_t size)
+    {
+       void* pv = mmap(NULL, size, PROT_EXEC | PROT_READ | PROT_WRITE, 
+               MAP_ANONYMOUS | MAP_PRIVATE, /*not a file mapping*/-1, 0);
+       if (pv == MAP_FAILED) {
+            perror("mmapPreserve");
+            throw std::bad_alloc();
+       }
+       return pv;
+    }
+    void* mm_grow(void* what, size_t size_a, size_t size_b)
+    {
+        void* pv = mremap(what, size_a, size_b, MREMAP_MAYMOVE);
+        if (pv == MAP_FAILED) {
+            perror("mmapPreserve");
+            throw std::bad_alloc();
+        }
+        return pv;
+    }
+    void* mm_move(void* what, size_t size, void* where)
+    {
+        void* pv = mremap(what, size, size, MREMAP_MAYMOVE | MREMAP_FIXED, where);
+        if (pv == MAP_FAILED) {
+            perror("mmapPreserve");
+            throw std::bad_alloc();
+        }
+        return pv;
+    }
   
     [[nodiscard]] T* allocate(std::size_t n) 
     {
@@ -175,18 +209,13 @@ struct allocPreserve
         memChunk* retVal = memChunk::get();
         // If we need new memory from system
         if (retVal == nullptr) {
-            void* pv = mmap(NULL, pgNeeded * page_size, PROT_EXEC | PROT_READ | PROT_WRITE, 
-                    MAP_ANONYMOUS | MAP_PRIVATE, -1, 0);
-            if (pv == MAP_FAILED) {
-                 throw std::bad_alloc();
-            }
-            auto p = static_cast<T*>(pv);
+            auto p = static_cast<T*>(mm_alloc(pgNeeded * page_size));
             return p;
         }
         // Chunk too big, cut tail and return to the queue
         assert((uintptr_t)retVal % page_size == 0);
         if (pgNeeded < retVal->pgSize) {
-            auto mc = new (retVal + pgNeeded) memChunk (retVal->pgSize - pgNeeded);
+            memChunk*  mc = new (retVal + pgNeeded) memChunk (retVal->pgSize - pgNeeded);
             retVal->pgSize = pgNeeded;
             memChunk::put(mc);
         }
@@ -196,13 +225,9 @@ struct allocPreserve
             return p;
         }
         // We need to grow. Add address space after our chunk (may move mapping)
-        void* pv = mremap(retVal, retVal->pgSize * page_size, pgNeeded * page_size, 
-                MREMAP_MAYMOVE);
+        void* pv = mm_grow(retVal, retVal->pgSize * page_size, pgNeeded * page_size);
         retVal = static_cast<memChunk*>(pv);
-        if (pv == MAP_FAILED) {
-            perror("mmapPreserve");
-            throw std::bad_alloc();
-        }
+
         // Let's start collecting chunks
         assert(pgNeeded > retVal->pgSize);
         pgNeeded -= retVal->pgSize;
@@ -221,13 +246,8 @@ struct allocPreserve
                 memChunk::put(mc);
             }
             // Smaller or equal(maybe after trimming), just attach at the end
-            void* pv = mremap(mc1, mc1->pgSize * page_size, mc1->pgSize * page_size, 
-                MREMAP_MAYMOVE | MREMAP_FIXED, mc_next);
+            void* pv = mm_move(mc1, mc1->pgSize * page_size, mc_next);
             mc1 = static_cast<memChunk*>(pv);
-            if (pv == MAP_FAILED) {
-                perror("mmapPreserve");
-                throw std::bad_alloc();
-            }
             assert(mc1 == mc_next);
             assert(pgNeeded >= mc1->pgSize);
             pgNeeded -= mc1->pgSize; 

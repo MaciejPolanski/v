@@ -20,7 +20,9 @@ using std::cout;
 using std::setw;
 using std::to_string;
 
-const int         N_pushes{ 1022 };// # of pushes into vector
+std::atomic<mm::memChunk*> mm::memChunk::head;
+
+const int         N_pushes{ 1022};// # of pushes into vector
 const std::size_t M_vectors{100};  // # of pararell vectors (to slow down process) 
 static_assert(M_vectors > 0);
 struct blob {                      // Block-Of-Bytes to be pushed into vectors
@@ -270,11 +272,29 @@ void testReservedVectors()
     realFree(vecNone);
 }
 
+void printChunks()
+{
+    mm::memChunk *head = mm::memChunk::head.exchange(0);
+    std::cout << "Chunks: ";
+
+    mm::memChunk *ch = head;
+    while (ch) {
+        std::cout << "[" << addr(ch) << "]" << ch->pgSize << ", ";
+        ch = ch->next;
+    }
+    std::cout << "\n";
+
+    mm::memChunk::put(head);
+}
+
 void testPreservingAllocator()
 {
     cStats m;
     tStatesOfVector logs;
     std::array<std::vector<blob>, M_vectors> vectors1;
+
+    using allocPreserve = mm::allocPreserve<blob>;
+    std::array<std::vector<blob, allocPreserve>, M_vectors> vecPreserve;
 
     cout << MT << "\n+------------ Tests of preserving released memory ----------------+" << NC;
 
@@ -287,14 +307,52 @@ void testPreservingAllocator()
     printMaps.oneLine();
 
     // True memory release by swap
-    cout << "\n[Real free (swap), default alloc                       ]" << NC;
+    cout << ST << "\nReuse by vector::clear() with default alloc            ]" << NC;
+    for_each(begin(vectors1), end(vectors1), [](auto& a)->void{a.clear();});
     m.start();
-    realFree(vectors1);
+    test(vectors1, logs);
     m.stop();
+    printStatesOfVector(logs);
     //printMaps.multiLine();
 
-  
+    // Cleaning standard vectors
+    realFree(vectors1);
+    printMaps.oneLine();
  
+    // Allocator Preserving, first use   
+    cout << ST << "\n[Pushing one-by-one into vector(s) with allocPreserve  ]" << NC;
+    m.start();
+    test(vecPreserve, logs);
+    m.stop();
+    printStatesOfVector(logs);
+    printMaps.oneLine();
+    printChunks();
+
+    // Cleaning vector  
+    cout << ST << "\n[Swap-clean. Memory moved to chunks, maps kept         ]" << NC;
+    m.start();
+    realFree(vecPreserve);
+    m.stop();
+    //printMaps.multiLine();
+    //printChunks();
+
+    mm::memChunk::release();
+    return; // Due to expected crash
+    // Allocator Preserving, next use
+    cout << ST << "\n[Pushing one-by-one into vector(s) with allocPreserve  ]" << NC;
+    m.start();
+    test(vecPreserve, logs);
+    m.stop();
+    printStatesOfVector(logs);
+    printMaps.oneLine();
+
+    // Cleaning vector  
+    cout << ST << "\n[Swap-clean. Memory moved to chunks, chunks released   ]" << NC;
+    m.start();
+    realFree(vecPreserve);
+    mm::memChunk::release();
+    m.stop();
+    printMaps.oneLine();
 }
 
 int main(int argc, char** argv)
@@ -316,6 +374,7 @@ int main(int argc, char** argv)
 
     cout << ST << "\nFinished, left " << NC;
     printMaps.multiLine();
+    printChunks();
 }
 
 //   Kernel memory page allocation calls:

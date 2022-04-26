@@ -306,6 +306,34 @@ void testThreads()
     printChunks();
 }
 
+void  testTwoVectors()
+{
+    cout << "\033[1;33m\n+---      Two vectors test      ---+\033[0m\n";
+
+    using a = mm::allocPreserve<blob>;
+    std::vector<blob, a> v;
+    int n = 1000;
+
+    for (int x = 0; x < n;++x) {
+       v.push_back(blob{});
+    }
+
+    // Clearing vector to chunks
+    printMaps.multiLine();
+    cout << "\n";
+    printChunks();
+    std::vector<blob, a>{}.swap(v);
+    cout << "*** Vector swap-cleared ***\n"; 
+    printMaps.multiLine();
+    cout << "\n";
+    printChunks();    
+
+    for (int x = 0; x < n;++x) {
+       v.push_back(blob{});
+    }
+}
+
+
 int main()
 {
     printMaps.init();
@@ -316,6 +344,7 @@ int main()
     testGrowmap();
     testCheckerboard();
     testThreads();
+    //testTwoVectors();
     cout << "\033[1;33m+---        End, memory status      ---+\033[0m\n";
     printMaps.multiLine();
 }
