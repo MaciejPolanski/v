@@ -9,6 +9,10 @@
 #include <atomic>
 #include <mutex>
 
+
+//#define ER(x) std::cerr x;
+#define ER(x)
+
 namespace mm {
 
 constexpr bool logall = true;
@@ -112,6 +116,8 @@ union memChunk {
     {
         if (!chunk)
             return;
+        ER( << "put  " << addr{chunk} << ", " << std::hex << "0x" << chunk->pgSize * page_size <<
+                ", (" << std::dec << chunk->pgSize  <<" pages)\n");
         memChunk **oldHead = &chunk->next;
         while (*oldHead) {
             oldHead = &(*oldHead)->next;
@@ -136,6 +142,8 @@ union memChunk {
         ;
         if (ret)
             ret->next = nullptr;
+        ER( << "get  " << addr{ret} << ", " << std::hex << "0x" <<  (ret ? (ret->pgSize*page_size) : 0) <<
+                std::dec << ", (" <<  (ret ? ret->pgSize : 0) << " pages)\n");
         return ret;
     }
 
@@ -155,7 +163,6 @@ static_assert(sizeof(memChunk) == page_size);
 
 // Allocator preserving memory between allocations 
 // This should rather be implemented insid glibc alloc()
-
 template <class T>
 struct allocPreserve
 {
@@ -172,17 +179,34 @@ struct allocPreserve
 
     void* mm_alloc(size_t size)
     {
-       void* pv = mmap(NULL, size, PROT_EXEC | PROT_READ | PROT_WRITE, 
-               MAP_ANONYMOUS | MAP_PRIVATE, /*not a file mapping*/-1, 0);
-       if (pv == MAP_FAILED) {
+        void* pv = mmap(NULL, size, PROT_EXEC | PROT_READ | PROT_WRITE, 
+                MAP_ANONYMOUS | MAP_PRIVATE | MAP_POPULATE, /*not a file mapping*/-1, 0);
+        ER( << "aloc " << addr{pv} << ", " << std::setw(5) << size / page_size << " pages\n");
+        if (pv == MAP_FAILED) {
             perror("mmapPreserve");
             throw std::bad_alloc();
-       }
-       return pv;
+        }
+        return pv;
+    }
+    void mm_populate(void* what, size_t size)
+    {
+        void* pv = mmap(what, size, PROT_EXEC | PROT_READ | PROT_WRITE, 
+                MAP_ANONYMOUS | MAP_PRIVATE | MAP_POPULATE | MAP_FIXED, /*not a file mapping*/-1, 0);
+        ER( << "popl " << addr{pv} << ", " << std::hex << "0x" << size << std::dec << ", " <<
+                "(" << size / page_size << " pages)\n");
+        if (pv == MAP_FAILED) {
+            perror("mmapPreserve");
+            throw std::bad_alloc();
+        }
     }
     void* mm_grow(void* what, size_t size_a, size_t size_b)
     {
+        // Segfault test for memory being remapped
+        // for (char* x = static_cast<char*>(what); x < (static_cast<char*>(what) + size_a - 1); *(x++) = 0);
+
         void* pv = mremap(what, size_a, size_b, MREMAP_MAYMOVE);
+        ER( << "grow " << addr{what} << " -> " << addr{pv} << ", " << std::hex << "0x" << size_b <<
+                std::dec << " (" << size_a / page_size << " -> " << size_b / page_size << " pages)\n");
         if (pv == MAP_FAILED) {
             perror("mmapPreserve");
             throw std::bad_alloc();
@@ -192,6 +216,8 @@ struct allocPreserve
     void* mm_move(void* what, size_t size, void* where)
     {
         void* pv = mremap(what, size, size, MREMAP_MAYMOVE | MREMAP_FIXED, where);
+        ER( << "move " << addr{what} << " -> " << addr{where} << ", " //<< "(" << addr{pv} << ") "
+                "0x" << std::hex << size << ", " << std::dec  << size / page_size << " pages\n");
         if (pv == MAP_FAILED) {
             perror("mmapPreserve");
             throw std::bad_alloc();
@@ -234,8 +260,9 @@ struct allocPreserve
         memChunk* mc_next = retVal + retVal->pgSize;
         while (pgNeeded) {
             memChunk* mc1 = memChunk::get();
-            // No more chunks, soft fault will act if needed
+            // No more chunks, force preallocation
             if (!mc1) {
+                mm_populate(mc_next, pgNeeded * page_size);
                 auto p = (T*)retVal;
                 return p;
             }

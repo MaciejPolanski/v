@@ -4,6 +4,7 @@
 #include <vector>
 #include <thread>
 
+#include "memory_maps.h"
 #include "mm_alloc.h"
 
 using std::cout;

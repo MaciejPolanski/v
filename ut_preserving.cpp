@@ -32,13 +32,12 @@ void printChunks()
 
     mm::memChunk *ch = head;
     while (ch) {
-        std::cout << addr{ch} << " " << p2s(ch->pgSize) << "\n";
+        std::cout << addr{ch} << ", " << ch->pgSize  << " pages, " << p2s(ch->pgSize) << "\n";
         ++nTotal;
         pgTotal += ch->pgSize;
         ch = ch->next;
     }
-    std::cout << "Total " << nTotal << " chunks, " << p2s(pgTotal) << "\n";
-    std::cout << "\n";
+    std::cout << "Returning " << nTotal << " chunks, total " << p2s(pgTotal) << "\n";
     mm::memChunk::put(head);
 }
 
@@ -308,26 +307,24 @@ void testThreads()
 
 void  testTwoVectors()
 {
-    cout << "\033[1;33m\n+---      Two vectors test      ---+\033[0m\n";
+    cout << "\033[1;33m\n+---     Grow and clear of vectors      ---+\033[0m\n";
 
     using a = mm::allocPreserve<blob>;
     std::vector<blob, a> v;
     int n = 1000;
 
+    cout << "*** Pushing " << n << " data first time\n";
     for (int x = 0; x < n;++x) {
        v.push_back(blob{});
     }
 
     // Clearing vector to chunks
-    printMaps.multiLine();
-    cout << "\n";
-    printChunks();
+    cout << "\n*** Swap-clear of vector ***\n"; 
     std::vector<blob, a>{}.swap(v);
-    cout << "*** Vector swap-cleared ***\n"; 
     printMaps.multiLine();
-    cout << "\n";
     printChunks();    
 
+    cout << "\n*** Pushing " << n << " data again ***\n";
     for (int x = 0; x < n;++x) {
        v.push_back(blob{});
     }

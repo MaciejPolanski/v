@@ -370,7 +370,7 @@ int main(int argc, char** argv)
 
     testReservedVectors();
     testVectors();
-    testPreservingAllocator();
+    // testPreservingAllocator();
 
     cout << ST << "\nFinished, left " << NC;
     printMaps.multiLine();
