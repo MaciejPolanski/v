@@ -1,3 +1,5 @@
+#ifndef V_MM_ALLOC_H
+#define V_MM_ALLOC_H
 // Copyright Maciej Polanski
 
 #include <sys/mman.h>
@@ -10,8 +12,12 @@
 #include <mutex>
 
 
-//#define ER(x) std::cerr x;
-#define ER(x)
+#ifdef MM_DBG
+#   include "memory_maps.h"
+#   define ER(x) std::cerr x;
+#else
+#   define ER(x)
+#endif
 
 namespace mm {
 
@@ -116,8 +122,8 @@ union memChunk {
     {
         if (!chunk)
             return;
-        ER( << "put  " << addr{chunk} << ", " << std::hex << "0x" << chunk->pgSize * page_size <<
-                ", (" << std::dec << chunk->pgSize  <<" pages)\n");
+        ER( << "put  " << mapSpan(chunk, chunk->pgSize * page_size) <<
+                ", " << chunk->pgSize  <<" pages\n");
         memChunk **oldHead = &chunk->next;
         while (*oldHead) {
             oldHead = &(*oldHead)->next;
@@ -142,8 +148,8 @@ union memChunk {
         ;
         if (ret)
             ret->next = nullptr;
-        ER( << "get  " << addr{ret} << ", " << std::hex << "0x" <<  (ret ? (ret->pgSize*page_size) : 0) <<
-                std::dec << ", (" <<  (ret ? ret->pgSize : 0) << " pages)\n");
+        ER( << "get  " << mapSpan(ret, (ret ? (ret->pgSize*page_size) : 0)) <<
+                ", " <<  (ret ? ret->pgSize : 0) << " pages\n");
         return ret;
     }
 
@@ -181,7 +187,7 @@ struct allocPreserve
     {
         void* pv = mmap(NULL, size, PROT_EXEC | PROT_READ | PROT_WRITE, 
                 MAP_ANONYMOUS | MAP_PRIVATE | MAP_POPULATE, /*not a file mapping*/-1, 0);
-        ER( << "aloc " << addr{pv} << ", " << std::setw(5) << size / page_size << " pages\n");
+        ER( << "aloc " << mapSpan(pv, size) << ", " << size / page_size << " pages\n");
         if (pv == MAP_FAILED) {
             perror("mmapPreserve");
             throw std::bad_alloc();
@@ -204,24 +210,24 @@ struct allocPreserve
         // Segfault test for memory being remapped
         // for (char* x = static_cast<char*>(what); x < (static_cast<char*>(what) + size_a - 1); *(x++) = 0);
 
+        ER( << "grow " << mapSpan(what, size_a) << ", " << size_a / page_size << " pages\n");
         void* pv = mremap(what, size_a, size_b, MREMAP_MAYMOVE);
-        ER( << "grow " << addr{what} << " -> " << addr{pv} << ", " << std::hex << "0x" << size_b <<
-                std::dec << " (" << size_a / page_size << " -> " << size_b / page_size << " pages)\n");
         if (pv == MAP_FAILED) {
             perror("mmapPreserve");
             throw std::bad_alloc();
         }
+        ER( << "     " << mapSpan(pv, size_b) << ", " << size_b / page_size << " pages\n");
         return pv;
     }
     void* mm_move(void* what, size_t size, void* where)
     {
+        ER( << "move " << mapSpan(what, size) << ", " << size / page_size << " pages\n");
         void* pv = mremap(what, size, size, MREMAP_MAYMOVE | MREMAP_FIXED, where);
-        ER( << "move " << addr{what} << " -> " << addr{where} << ", " //<< "(" << addr{pv} << ") "
-                "0x" << std::hex << size << ", " << std::dec  << size / page_size << " pages\n");
         if (pv == MAP_FAILED) {
             perror("mmapPreserve");
             throw std::bad_alloc();
         }
+        ER( << "     " << mapSpan(pv, size) << "\n");
         return pv;
     }
   
@@ -231,6 +237,7 @@ struct allocPreserve
             throw std::bad_array_new_length();
     
         uintptr_t pgNeeded = n ? memChunk::mem2pages(n * sizeof(T)) : 1;
+        ER( << "ALOC " << n * sizeof(T) << ", " << pgNeeded <<" pages\n");
     
         memChunk* retVal = memChunk::get();
         // If we need new memory from system
@@ -262,7 +269,7 @@ struct allocPreserve
             memChunk* mc1 = memChunk::get();
             // No more chunks, force preallocation
             if (!mc1) {
-                mm_populate(mc_next, pgNeeded * page_size);
+                //mm_populate(mc_next, pgNeeded * page_size);
                 auto p = (T*)retVal;
                 return p;
             }
@@ -286,10 +293,13 @@ struct allocPreserve
  
     void deallocate(T* p, std::size_t n) noexcept 
     {
-        memChunk* mc = new (p) memChunk(n ? memChunk::mem2pages(n * sizeof(T)) : 1);
+        std::size_t pgNeeded = memChunk::mem2pages(n * sizeof(T));
+        ER( << "DEAL " << n * sizeof(T) << ", " << pgNeeded <<" pages\n");
+        memChunk* mc = new (p) memChunk(n ? pgNeeded : 1);
         memChunk::put(mc);
         //munmap(p, pages * page_size);
     }
 };
 
 } // namespace mm
+#endif

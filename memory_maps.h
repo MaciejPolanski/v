@@ -1,3 +1,6 @@
+#ifndef V_MEMORY_MAPS_H
+#define V_MEMORY_MAPS_H
+
 // Copyright Maciej Polanski
 
 #include <iostream>
@@ -30,9 +33,28 @@ struct pfn2s_t {
     std::string operator()(long m) { return mem2str(m * page_size);}
 };
 
-// Formatting 48bit adresses in two parts
-struct addr{
+// 0x hex format for uintprt_t
+struct hex0x {
     uintptr_t l;
+    int width;
+
+    hex0x(uintptr_t _l, int _width = -1): l(_l), width(_width){} 
+    hex0x(void * v): l(reinterpret_cast<uintptr_t>(v)), width(12){}
+
+    friend std::ostream& operator<<(std::ostream &o, hex0x a)
+    {
+        //o << "0x";
+        if (a.width != -1)
+            o << setw(a.width);
+        o << std::hex /*<< std::showbase*/ << a.l << std::dec << std::noshowbase;
+        return o;
+    }
+};
+
+// Formatting 48bit adresses in two parts
+struct addr {
+    uintptr_t l;
+
     addr(uintptr_t _l): l(_l){} 
     addr(void * v): l(reinterpret_cast<uintptr_t>(v)){}
 
@@ -44,6 +66,22 @@ struct addr{
         o << setw(bits/4) << std::hex << (a.l >> bits) << ":";
         o << std::setfill('0') << setw(bits/4) << (a.l & lo_mask) << std::setfill(' ');
         o << std::dec;
+        return o;
+    }
+};
+
+// Formatting span 
+struct mapSpan {
+    uintptr_t l;
+    uintptr_t size;  
+ 
+    mapSpan(uintptr_t _l, uintptr_t _size ): l(_l), size(_size){} 
+    mapSpan(void * v, uintptr_t _size): l(reinterpret_cast<uintptr_t>(v)), size(_size){}
+
+    friend std::ostream& operator<<(std::ostream &o, mapSpan a)
+    {
+        o << "<" << addr{a.l} << "-" << hex0x(a.size, 8) << "-";
+        o << addr{a.l + a.size} << ")";
         return o;
     }
 };
@@ -117,4 +155,4 @@ class cPrintMemoryMaps {
         // cout << "\n";
     }
 };
-
+#endif

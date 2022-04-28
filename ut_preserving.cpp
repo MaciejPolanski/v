@@ -5,6 +5,7 @@
 #include <cstring>
 #include <condition_variable>
 
+#define MM_DBG
 #include "memory_maps.h"
 #include "mm_alloc.h"
 
@@ -337,11 +338,11 @@ int main()
     cout << "Unit test, manual, for mm::allocPreserving\n";
     cout << "Page size is: " << mm::page_size;
     cout << " Blob size: "<< mem2str(sizeof(blob)) << "\n";
-    testSmoke();
-    testGrowmap();
-    testCheckerboard();
-    testThreads();
-    //testTwoVectors();
+    //testSmoke();
+    //testGrowmap();
+    //testCheckerboard();
+    //testThreads();
+    testTwoVectors();
     cout << "\033[1;33m+---        End, memory status      ---+\033[0m\n";
     printMaps.multiLine();
 }
