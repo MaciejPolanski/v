@@ -5,7 +5,7 @@
 #include <thread>
 
 //#define MM_DBG
-#include "mm_alloc.h"
+#include "mm_alloc_preserve.h"
 
 using std::cout;
 using mm::memChunk;
