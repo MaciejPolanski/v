@@ -1,104 +1,109 @@
-***************         Start here         *************
-./main.out
-[0;33m+--Data size: 998 MB, 1022 elements of size 10240 in 100 vectors--+
-[0m[1;33m
-+----------------------- Reserved vectors ------------------------+[0m[0;33m
-[New, reserved std::vector                             ][0m t: 172 ms
-vms: 1003 MB rss: 1001 MB page_fault: 51618
+Linux shodan-debian 4.19.0-20-amd64 #1 SMP Debian 4.19.235-1 (2022-03-17) x86_64 GNU/Linux
++--Data size: 4882 MB, 5000 elements of size 10240 in 100 vectors--+
+
++----------------------- Reserved vectors ------------------------+
+[New, reserved std::vector                             ] t: 545 ms
+vms: 4888 MB rss: 4886 MB page_fault: 52755
 Vector:Size     Capa  Buffer addr.       Addr. change
-       1,   10220 KB  0x7f5626:d22010   +/- 130392 GB
-    1022,   10220 KB  0x7f5626:d22010   +/-      0  B
+       1,      48 MB  0x7ff58c:53c010   +/- 131030 GB
+    5000,      48 MB  0x7ff58c:53c010   +/-      0  B
 Anonimous mmaps: 
-0x564661:21d000 - 0x564661:253000   216 KB[heap] free2next: 42046 GB
-0x7f55e9:0ae000 - 0x7f5627:722000   998 MB
+0x557342:c3e000 - 0x557342:c74000   216 KB[heap] free2next: 43524 GB
+0x7ff45e:2dd000 - 0x7ff58f:615000  4883 MB
 
-[Real free (swap) of std::vector(s)                    ][0m t: 9 ms
-vms: 5640 KB rss: 3504 KB page_fault: 0
-[0;33m
-[Time excluding reserve() (proof reserve does nothing) ][0m t: 174 ms
-vms: 1003 MB rss: 1001 MB page_fault: 51611
-[0;33m
-[allocPopulate popFull                                 ][0m t: 134 ms
-vms: 1003 MB rss: 1001 MB page_fault: 51611
-Anonimous mmaps: 216 KB, 998 MB, 
-[0;33m
-[allocPopulate popFull, excluding reserve() time       ][0m t: 56 ms
-vms: 1003 MB rss: 1001 MB page_fault: 0
-[0;33m
-[allocPopulate popHalf                                 ][0m t: 148 ms
-vms: 1003 MB rss: 1001 MB page_fault: 51611
-Anonimous mmaps: 216 KB, 998 MB, 
-[0;33m
-[allocPopulate popHalf, excluding reserve() time       ][0m t: 103 ms
-vms: 1003 MB rss: 1001 MB page_fault: 25852
-[0;33m
-[allocPopulate popNone (for comparsion)                ][0m t: 120 ms
-vms: 1003 MB rss: 1001 MB page_fault: 1022
-Anonimous mmaps: 216 KB, 998 MB, 
+[Time excluding reserve() (proof reserve does nothing) ] t: 545 ms
+vms: 4888 MB rss: 4886 MB page_fault: 52727
 
-[allocPopulate popNone, excluding reserve()            ][0m t: 119 ms
-vms: 1003 MB rss: 1001 MB page_fault: 1022
-[1;33m
-+--------------- Non reserved vectors (observe growth) -----------+[0m[0;33m
-[Pushing one-by-one into std::vector(s)                ][0m t: 485 ms
-vms: 1005 MB rss: 1001 MB page_fault: 210474
+[allocPopulate popFull                                 ] t: 469 ms
+vms: 4888 MB rss: 4886 MB page_fault: 53238
+Anonimous mmaps: 216 KB, 4882 MB, 
+
+[allocPopulate popFull, excluding reserve() time       ] t: 222 ms
+vms: 4888 MB rss: 4886 MB page_fault: 0
+
+[allocPopulate popHalf                                 ] t: 487 ms
+vms: 4888 MB rss: 4886 MB page_fault: 53238
+Anonimous mmaps: 216 KB, 4882 MB, 
+
+[allocPopulate popHalf, excluding reserve() time       ] t: 361 ms
+vms: 4888 MB rss: 4886 MB page_fault: 26574
+
+[allocPopulate popNone (for comparsion)                ] t: 463 ms
+vms: 4888 MB rss: 4886 MB page_fault: 2649
+Anonimous mmaps: 216 KB, 4882 MB, 
+
+[allocPopulate popNone, excluding reserve()            ] t: 463 ms
+vms: 4888 MB rss: 4886 MB page_fault: 2649
+
++------------- Non reserved vectors (growth observation) ---------+
+[Pushing one-by-one into std::vector(s)                ] t: 1924 ms
+vms: 8006 MB rss: 4996 MB page_fault: 333850
 Vector:Size     Capa  Buffer addr.       Addr. change
-       1,      10 KB  0x564661:2324b0   +/-  88345 GB
-       2,      20 KB  0x564661:32caf0   +/-   1001 KB
-       3,      40 KB  0x564661:42be20   +/-   1020 KB
-       5,      80 KB  0x564661:62a150   +/-   2040 KB
-       9,     160 KB  0x7f5627:6f5010   +/-  42047 GB
-      17,     320 KB  0x7f5626:ea2010   +/-  -8524 KB
-      33,     640 KB  0x7f5625:dde010   +/-    -16 MB
-      65,    1280 KB  0x7f5623:d2b010   +/-    -32 MB
-     129,    2560 KB  0x7f561f:ab7010   +/-    -66 MB
-     257,    5120 KB  0x7f5617:382010   +/-   -135 MB
-     513,      10 MB  0x7f5606:f4f010   +/-   -260 MB
-    1022,      10 MB  0x7f5606:f4f010   +/-      0  B
-Anonimous mmaps: 216 KB, 520 MB, 250 MB, 130 MB, 60 MB, 30 MB, 10 MB, 
-[0;33m
-[Reusing into std::vector cleared with clear()         ][0m t: 66 ms
-vms: 1005 MB rss: 1001 MB page_fault: 0
+       1,      10 KB  0x557342:c534b0   +/-  87501 GB
+       2,      20 KB  0x557342:d4daf0   +/-   1001 KB
+       3,      40 KB  0x557342:e4ce20   +/-   1020 KB
+       5,      80 KB  0x557343:04b150   +/-   2040 KB
+       9,     160 KB  0x7ff58f:5e8010   +/-  43529 GB
+      17,     320 KB  0x7ff58e:d95010   +/-  -8524 KB
+      33,     640 KB  0x7ff58d:cd1010   +/-    -16 MB
+      65,    1280 KB  0x7ff58b:c1e010   +/-    -32 MB
+     129,    2560 KB  0x7ff587:9aa010   +/-    -66 MB
+     257,    5120 KB  0x7ff57f:275010   +/-   -135 MB
+     513,      10 MB  0x7ff56e:e42010   +/-   -260 MB
+    1025,      20 MB  0x7ff54d:c0e010   +/-   -530 MB
+    2049,      40 MB  0x7ff50c:bdb010   +/-  -1040 MB
+    4097,      80 MB  0x7ff488:3a7010   +/-  -2120 MB
+    5000,      80 MB  0x7ff488:3a7010   +/-      0  B
+Anonimous mmaps: 216 KB, 4080 MB, 2000 MB, 1040 MB, 480 MB, 240 MB, 80 MB, 80 MB, 
+
+[Reusing into std::vector cleared with clear()         ] t: 264 ms
+vms: 8006 MB rss: 4996 MB page_fault: 0
 Vector:Size     Capa  Buffer addr.       Addr. change
-       1,      10 MB  0x7f5606:f4f010   +/- 130392 GB
-    1022,      10 MB  0x7f5606:f4f010   +/-      0  B
-Anonimous mmaps: 216 KB, 520 MB, 250 MB, 130 MB, 60 MB, 30 MB, 10 MB, 
-[0;33m
-[Pushing into vector with allocPopulate popFull        ][0m t: 381 ms
-vms: 1005 MB rss: 1003 MB page_fault: 216179
+       1,      80 MB  0x7ff488:3a7010   +/- 131026 GB
+    5000,      80 MB  0x7ff488:3a7010   +/-      0  B
+Anonimous mmaps: 216 KB, 4080 MB, 2000 MB, 1040 MB, 480 MB, 240 MB, 80 MB, 80 MB, 
+
+[Pushing into vector with allocPopulate popFull        ] t: 1962 ms
+vms: 8005 MB rss: 8003 MB page_fault: 376990
 Vector:Size     Capa  Buffer addr.       Addr. change
-       1,      10 KB  0x564661:2324b0   +/-  88345 GB
-       2,      20 KB  0x564661:32caf0   +/-   1001 KB
-       3,      40 KB  0x564661:42be20   +/-   1020 KB
-       5,      80 KB  0x564661:62a150   +/-   2040 KB
-       9,     160 KB  0x7f5627:6f6000   +/-  42047 GB
-      17,     320 KB  0x7f5626:72e000   +/-    -15 MB
-      33,     640 KB  0x7f5625:6ee000   +/-    -16 MB
-      65,    1280 KB  0x7f5623:66e000   +/-    -32 MB
-     129,    2560 KB  0x7f561f:56e000   +/-    -65 MB
-     257,    5120 KB  0x7f5617:36e000   +/-   -130 MB
-     513,      10 MB  0x7f5606:f6e000   +/-   -260 MB
-    1022,      10 MB  0x7f5606:f6e000   +/-      0  B
-Anonimous mmaps: 216 KB, 510 MB, 250 MB, 240 MB, 
+       1,      10 KB  0x557342:c534b0   +/-  87501 GB
+       2,      20 KB  0x557342:d4daf0   +/-   1001 KB
+       3,      40 KB  0x557342:e4ce20   +/-   1020 KB
+       5,      80 KB  0x557343:04b150   +/-   2040 KB
+       9,     160 KB  0x7ff58f:5e9000   +/-  43529 GB
+      17,     320 KB  0x7ff58e:621000   +/-    -15 MB
+      33,     640 KB  0x7ff58d:5e1000   +/-    -16 MB
+      65,    1280 KB  0x7ff58b:561000   +/-    -32 MB
+     129,    2560 KB  0x7ff587:461000   +/-    -65 MB
+     257,    5120 KB  0x7ff57f:261000   +/-   -130 MB
+     513,      10 MB  0x7ff56e:e61000   +/-   -260 MB
+    1025,      20 MB  0x7ff54e:661000   +/-   -520 MB
+    2049,      40 MB  0x7ff50d:661000   +/-  -1040 MB
+    4097,      80 MB  0x7ff488:e61000   +/-  -2120 MB
+    5000,      80 MB  0x7ff488:e61000   +/-      0  B
+Anonimous mmaps: 216 KB, 4160 MB, 2000 MB, 960 MB, 720 MB, 80 MB, 80 MB, 
 After swap-free:
 Anonimous mmaps: 216 KB, 
-[0;33m
-[Pushing into vector with allocPopulate popHalf        ][0m t: 436 ms
-vms: 1005 MB rss: 1001 MB page_fault: 215679
+
+[Pushing into vector with allocPopulate popHalf        ] t: 1875 ms
+vms: 8005 MB rss: 4997 MB page_fault: 361255
 Vector:Size     Capa  Buffer addr.       Addr. change
-       1,      10 KB  0x564661:2324b0   +/-  88345 GB
-       2,      20 KB  0x564661:32caf0   +/-   1001 KB
-       3,      40 KB  0x564661:42be20   +/-   1020 KB
-       5,      80 KB  0x564661:62a150   +/-   2040 KB
-       9,     160 KB  0x7f5627:6f6000   +/-  42047 GB
-      17,     320 KB  0x7f5626:72e000   +/-    -15 MB
-      33,     640 KB  0x7f5625:6ee000   +/-    -16 MB
-      65,    1280 KB  0x7f5623:66e000   +/-    -32 MB
-     129,    2560 KB  0x7f561f:56e000   +/-    -65 MB
-     257,    5120 KB  0x7f5617:36e000   +/-   -130 MB
-     513,      10 MB  0x7f5606:f6e000   +/-   -260 MB
-    1022,      10 MB  0x7f5606:f6e000   +/-      0  B
-Anonimous mmaps: 216 KB, 510 MB, 250 MB, 240 MB, 
-[0;33m
-Finished, left [0mAnonimous mmaps: 
-0x564661:21d000 - 0x564661:253000   216 KB[heap]
+       1,      10 KB  0x557342:c534b0   +/-  87501 GB
+       2,      20 KB  0x557342:d4daf0   +/-   1001 KB
+       3,      40 KB  0x557342:e4ce20   +/-   1020 KB
+       5,      80 KB  0x557343:04b150   +/-   2040 KB
+       9,     160 KB  0x7ff58f:5e9000   +/-  43529 GB
+      17,     320 KB  0x7ff58e:621000   +/-    -15 MB
+      33,     640 KB  0x7ff58d:5e1000   +/-    -16 MB
+      65,    1280 KB  0x7ff58b:561000   +/-    -32 MB
+     129,    2560 KB  0x7ff587:461000   +/-    -65 MB
+     257,    5120 KB  0x7ff57f:261000   +/-   -130 MB
+     513,      10 MB  0x7ff56e:e61000   +/-   -260 MB
+    1025,      20 MB  0x7ff54e:661000   +/-   -520 MB
+    2049,      40 MB  0x7ff50d:661000   +/-  -1040 MB
+    4097,      80 MB  0x7ff488:e61000   +/-  -2120 MB
+    5000,      80 MB  0x7ff488:e61000   +/-      0  B
+Anonimous mmaps: 216 KB, 4160 MB, 2000 MB, 960 MB, 720 MB, 80 MB, 80 MB, 
+
+Finished, left Anonimous mmaps: 
+0x557342:c3e000 - 0x557342:c74000   216 KB[heap]
