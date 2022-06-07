@@ -8,8 +8,8 @@
 #include <algorithm>
 #include <functional>
 #include <set>
-#include <sys/resource.h>
 
+#include <sys/resource.h>
 #include <malloc.h>
 
 #include "stackoverflow/proc_statm.h"
@@ -21,14 +21,14 @@ using std::setw;
 using std::to_string;
 
 
-const int         N_pushes{ 1022};// # of pushes into vector
+const int         N_pushes{5000};// # of pushes into vector
 const std::size_t M_vectors{100};  // # of pararell vectors (to slow down process) 
 static_assert(M_vectors > 0);
 struct blob {                      // Block-Of-Bytes to be pushed into vectors
     unsigned char blob[10 * 1024];
 };
 
-constexpr bool color = true;
+constexpr bool color = false;
 
 constexpr const char* NC = color ? "\033[0m" : "";
 constexpr const char* MT = color ? "\033[1;33m" : "";
@@ -125,7 +125,7 @@ void testVectors()
     tStatesOfVector logs;
     std::array<std::vector<blob>, M_vectors> vectors1;
 
-    cout << MT << "\n+--------------- Non reserved vectors (observe growth) -----------+" << NC;
+    cout << MT << "\n+------------- Non reserved vectors (growth observation) ---------+" << NC;
 
     // Absoulutely standard use of vector   
     cout << ST << "\n[Pushing one-by-one into std::vector(s)                ]" << NC;
@@ -186,10 +186,10 @@ void testReservedVectors()
     printMaps.multiLine();
 
     // True memory release by swap
-    cout << "\n[Real free (swap) of std::vector(s)                    ]" << NC;
-    m.start();
+    //cout << "\n[Real free (swap) of std::vector(s)                    ]" << NC;
+    //m.start();
     realFree(vectors1);
-    m.stop();
+    //m.stop();
     //printMaps.multiLine();
 
 /*    cout << ST << "\n[Again reserved vector (not faster -> no mem reuse)    ]" << NC;
