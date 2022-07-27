@@ -28,7 +28,7 @@ struct blob {                      // Block-Of-Bytes to be pushed into vectors
     unsigned char blob[10 * 1024];
 };
 
-constexpr bool color = false;
+constexpr bool color = true; 
 
 constexpr const char* NC = color ? "\033[0m" : "";
 constexpr const char* MT = color ? "\033[1;33m" : "";
