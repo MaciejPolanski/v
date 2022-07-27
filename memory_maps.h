@@ -1,7 +1,7 @@
 #ifndef V_MEMORY_MAPS_H
 #define V_MEMORY_MAPS_H
 
-// Copyright Maciej Polanski
+// Copyright (c) 2022 Maciej Polanski
 
 #include <iostream>
 #include <iomanip>
