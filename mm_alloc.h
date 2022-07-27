@@ -1,6 +1,7 @@
 #ifndef V_MM_ALLOC_H
 #define V_MM_ALLOC_H
-// Copyright Maciej Polanski
+
+// Copyright (c) 2022 Maciej Polanski
 
 #include <sys/mman.h>
 #include <errno.h>
